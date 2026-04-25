@@ -1,6 +1,5 @@
-import { CrimeCase } from '../types';
-
-export const INITIAL_CASES: CrimeCase[] = [
+// Legacy file — superseded by questionBanks.ts. Kept for reference only.
+export const INITIAL_CASES = [
   {
     id: '1',
     title: 'The Velocity Vanish',
