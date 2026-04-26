@@ -558,29 +558,28 @@ export const SUBJECT_BANKS: SubjectBank[] = [
               'https://www.youtube.com/results?search_query=what+is+a+bit+binary+computer+science+basics+explained',
           },
           {
-            question: 'How many bits make up 1 byte?',
-            correctAnswer: '8 bits',
-            options: ['4 bits', '8 bits', '16 bits', '32 bits'],
+            type: 'code-fill',
+            question: 'Python\'s bin() converts a decimal to binary. Fill in the output.',
+            codeTemplate: '>>> bin(10)\n\'0b___\'',
+            correctAnswer: '1010',
+            options: [],
             explanation:
-              '1 byte = 8 bits. A byte can hold 2⁸ = 256 values (0–255). It is the standard unit for character encoding (e.g., \'A\' = 65 in ASCII = 01000001 in binary).',
+              'bin(10) returns \'0b1010\'. 10 = 8+2 = 1×2³ + 0×2² + 1×2¹ + 0×2⁰. The \'0b\' prefix signals binary.',
             topic: 'Binary Basics',
             youtubeUrl:
-              'https://www.youtube.com/results?search_query=bits+bytes+computer+science+units+explained',
+              'https://www.youtube.com/results?search_query=python+bin+function+binary+decimal+conversion+explained',
           },
           {
-            question: 'What does ASCII allow computers to do?',
-            correctAnswer: 'Represent text characters using binary numbers',
-            options: [
-              'Render high-definition graphics',
-              'Represent text characters using binary numbers',
-              'Execute machine-code instructions faster',
-              'Connect to the internet securely',
-            ],
+            type: 'code-fill',
+            question: 'ord() returns the ASCII/Unicode code point of a character. What does ord(\'A\') return?',
+            codeTemplate: '>>> ord(\'A\')\n___',
+            correctAnswer: '65',
+            options: [],
             explanation:
-              'ASCII (American Standard Code for Information Interchange) maps characters to 7-bit binary numbers. \'A\' = 65 = 1000001, \'a\' = 97 = 1100001.',
+              '\'A\' has ASCII value 65 = 01000001 in binary. ord() and chr() let you move between characters and their numeric codes.',
             topic: 'Binary Basics',
             youtubeUrl:
-              'https://www.youtube.com/results?search_query=ASCII+character+encoding+binary+computer+science+explained',
+              'https://www.youtube.com/results?search_query=python+ord+chr+ASCII+unicode+character+encoding+explained',
           },
         ],
       },
@@ -617,25 +616,28 @@ export const SUBJECT_BANKS: SubjectBank[] = [
               'https://www.youtube.com/results?search_query=decimal+to+binary+conversion+how+to+computer+science',
           },
           {
-            question: 'What is the binary number 11111111 in decimal?',
-            correctAnswer: '255',
-            options: ['127', '128', '255', '256'],
+            type: 'code-fill',
+            question: 'int() can parse any numeric base. Fill in the base argument to read a binary string.',
+            codeTemplate: '# Convert binary string "11111111" to decimal\nint("11111111", ___)',
+            correctAnswer: '2',
+            options: [],
             explanation:
-              '11111111₂ = 128+64+32+16+8+4+2+1 = 255. This is the maximum value storable in 1 byte.',
+              'int(string, base) parses a number in any base. Base 2 = binary. int("11111111", 2) = 255, the max 8-bit value.',
             topic: 'Binary Conversion',
             youtubeUrl:
-              'https://www.youtube.com/results?search_query=binary+number+conversion+practice+8+bits+tutorial',
+              'https://www.youtube.com/results?search_query=python+int+base+conversion+binary+decimal+tutorial',
           },
           {
-            question:
-              'If you have 4 bits (a nibble), what is the maximum decimal number you can represent?',
-            correctAnswer: '15',
-            options: ['4', '8', '15', '16'],
+            type: 'code-fill',
+            question: 'With n bits the maximum value is 2ⁿ − ?. Fill in the missing number.',
+            codeTemplate: '# Maximum value storable in 4 bits\nmax_val = 2 ** 4 - ___',
+            correctAnswer: '1',
+            options: [],
             explanation:
-              'With 4 bits the maximum value is 1111₂ = 8+4+2+1 = 15. Formula: 2⁴ - 1 = 15. To represent 16, you need 5 bits.',
+              '2⁴ − 1 = 15 (binary: 1111). The −1 is because counting starts at 0 (0 through 15 = 16 values).',
             topic: 'Binary Conversion',
             youtubeUrl:
-              'https://www.youtube.com/results?search_query=binary+nibble+4+bits+maximum+value+computer+science',
+              'https://www.youtube.com/results?search_query=binary+maximum+value+n+bits+formula+computer+science',
           },
         ],
       },
@@ -672,25 +674,28 @@ export const SUBJECT_BANKS: SubjectBank[] = [
               'https://www.youtube.com/results?search_query=NOT+gate+inverter+logic+gates+boolean+computer+science',
           },
           {
-            question: 'What is the output of an OR gate when inputs are A=1 and B=0?',
-            correctAnswer: '1',
-            options: ['0', '1', '2', 'Undefined'],
+            type: 'code-fill',
+            question: 'Implement a Python OR gate using the correct boolean keyword.',
+            codeTemplate: 'def or_gate(a, b):\n    return a ___ b',
+            correctAnswer: 'or',
+            options: [],
             explanation:
-              'OR gate outputs 1 when AT LEAST ONE input is 1. Since A=1, output = 1. Truth table: (0,0)→0, (0,1)→1, (1,0)→1, (1,1)→1.',
+              'Python uses \'or\' for boolean OR. True or False → True; False or False → False. Mirrors the OR gate: output is 1 when at least one input is 1.',
             topic: 'Logic Gates',
             youtubeUrl:
-              'https://www.youtube.com/results?search_query=OR+gate+logic+gates+boolean+algebra+computer+science',
+              'https://www.youtube.com/results?search_query=python+boolean+operators+and+or+not+logic+gates+explained',
           },
           {
-            question:
-              'Which logic gate outputs 1 ONLY when its two inputs are DIFFERENT (one 0, one 1)?',
-            correctAnswer: 'XOR (Exclusive OR)',
-            options: ['AND', 'NAND', 'OR', 'XOR (Exclusive OR)'],
+            type: 'code-fill',
+            question: 'Python\'s bitwise XOR operator outputs 1 when inputs differ. Fill in the symbol.',
+            codeTemplate: 'a, b = 1, 0\nresult = a ___ b  # True when inputs differ',
+            correctAnswer: '^',
+            options: [],
             explanation:
-              'XOR (Exclusive OR) outputs 1 when inputs differ. Truth table: (0,0)→0, (0,1)→1, (1,0)→1, (1,1)→0. Used in binary addition and error-checking circuits.',
+              '^ is Python\'s bitwise XOR operator. 1 ^ 0 = 1, 1 ^ 1 = 0, 0 ^ 0 = 0. Used in encryption, checksums, and binary addition.',
             topic: 'Logic Gates',
             youtubeUrl:
-              'https://www.youtube.com/results?search_query=XOR+gate+exclusive+or+logic+gates+computer+science+explained',
+              'https://www.youtube.com/results?search_query=python+bitwise+XOR+operator+logic+gates+explained',
           },
         ],
       },
@@ -733,30 +738,28 @@ export const SUBJECT_BANKS: SubjectBank[] = [
               'https://www.youtube.com/results?search_query=binary+search+algorithm+computer+science+explained+visualization',
           },
           {
-            question:
-              'What Big-O time complexity describes a loop that visits every element in a list exactly once?',
-            correctAnswer: 'O(n)',
-            options: ['O(1)', 'O(n)', 'O(n²)', 'O(log n)'],
+            type: 'code-fill',
+            question: 'This loop visits every element once. Fill in the Big-O time complexity letter.',
+            codeTemplate: '# Time complexity: O(___)\nfor item in my_list:\n    process(item)',
+            correctAnswer: 'n',
+            options: [],
             explanation:
-              'O(n) — linear time — means work grows proportionally with input size n. A nested loop over the same list gives O(n²). O(1) is constant time (no loop at all).',
+              'O(n) — linear time — means work grows proportionally with n (the list size). One operation per element = n total operations.',
             topic: 'Algorithms',
             youtubeUrl:
-              'https://www.youtube.com/results?search_query=big+O+notation+time+complexity+computer+science+beginners',
+              'https://www.youtube.com/results?search_query=big+O+notation+O+n+linear+time+complexity+explained',
           },
           {
-            question: 'In bubble sort, what operation is repeated to sort the list?',
-            correctAnswer: 'Adjacent elements are compared and swapped if out of order',
-            options: [
-              'The smallest element is found and moved to the front',
-              'The list is repeatedly split in half',
-              'Adjacent elements are compared and swapped if out of order',
-              'Each element is inserted into its correct position from scratch',
-            ],
+            type: 'code-fill',
+            question: 'Binary search needs integer division to find the midpoint. Fill in the Python operator.',
+            codeTemplate: 'def binary_search(arr, target):\n    low, high = 0, len(arr) - 1\n    mid = (low + high) ___ 2',
+            correctAnswer: '//',
+            options: [],
             explanation:
-              'Bubble sort repeatedly compares neighbouring elements, swapping them if left > right. After each pass, the largest unsorted element "bubbles" to its final position. O(n²) worst case.',
+              '// is Python\'s floor division operator. (low + high) // 2 gives the integer midpoint without floating-point rounding errors.',
             topic: 'Algorithms',
             youtubeUrl:
-              'https://www.youtube.com/results?search_query=bubble+sort+algorithm+explained+visualization+computer+science',
+              'https://www.youtube.com/results?search_query=python+floor+division+operator+binary+search+algorithm+explained',
           },
         ],
       },

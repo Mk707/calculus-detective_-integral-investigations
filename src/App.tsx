@@ -17,10 +17,13 @@ import {
   ExternalLink,
   Youtube,
 } from 'lucide-react';
-import { SUBJECT_BANKS, buildActiveCases, getSubjectMeta } from './data/questionBanks';
-import { GameState, Subject } from './types';
+import { buildActiveCases, getSubjectMeta } from './data/questionBanks';
+import { generateTopicCases, isGeminiAvailable } from './lib/gemini';
+import { ActiveCase, CaseResult, GameState, Subject } from './types';
 import { cn } from './lib/utils';
+// @ts-ignore
 import 'katex/dist/katex.min.css';
+// @ts-ignore
 import { BlockMath } from 'react-katex';
 
 // ─────────────────────────────────────────────────────────
@@ -121,22 +124,33 @@ const SUBJECT_CONFIG: {
 ];
 
 // ─────────────────────────────────────────────────────────
+// Suggested topics shown as chips on the topic-input screen
+// ─────────────────────────────────────────────────────────
+const TOPIC_SUGGESTIONS: Record<Subject, string[]> = {
+  calculus: ['Derivatives', 'Integrals', 'Limits', 'Chain Rule', 'Related Rates', 'Optimization'],
+  biology: ['Genetics', 'Cell Biology', 'Evolution', 'DNA & RNA', 'Ecosystems', 'Photosynthesis'],
+  'computer-science': ['Python Basics', 'Recursion', 'Sorting Algorithms', 'Logic Gates', 'Big-O Notation', 'Data Structures'],
+};
+
+// ─────────────────────────────────────────────────────────
 // Per-subject explicit Tailwind class maps (no interpolation)
 // ─────────────────────────────────────────────────────────
 const SUBJECT_STYLES: Record<
   Subject | 'default',
   {
-    accent: string;        // text color
-    pulse: string;         // bg for pulsing dot / header icon
-    badgeText: string;     // text on inline badge
-    badgeBg: string;       // bg on inline badge
-    badgeBorder: string;   // border on inline badge
-    cardBg: string;        // card background tint (conclusion)
-    cardBorder: string;    // card border (conclusion)
-    borderSoft: string;    // soft border (briefing quote box)
-    bgSoft: string;        // soft background (briefing quote box)
-    termBg: string;        // icon bg (terminal icon)
-    termBorder: string;    // icon border (terminal icon)
+    accent: string;
+    pulse: string;
+    badgeText: string;
+    badgeBg: string;
+    badgeBorder: string;
+    cardBg: string;
+    cardBorder: string;
+    borderSoft: string;
+    bgSoft: string;
+    termBg: string;
+    termBorder: string;
+    mcHover: string;   // hover border on multiple-choice buttons
+    barBg: string;     // bottom bar accent on multiple-choice buttons
   }
 > = {
   default: {
@@ -151,6 +165,8 @@ const SUBJECT_STYLES: Record<
     bgSoft: 'bg-cyan-500/5',
     termBg: 'bg-cyan-500/10',
     termBorder: 'border-cyan-500/20',
+    mcHover: 'hover:border-cyan-500/40',
+    barBg: 'bg-cyan-500',
   },
   calculus: {
     accent: 'text-cyan-400',
@@ -164,6 +180,8 @@ const SUBJECT_STYLES: Record<
     bgSoft: 'bg-cyan-500/5',
     termBg: 'bg-cyan-500/10',
     termBorder: 'border-cyan-500/20',
+    mcHover: 'hover:border-cyan-500/40',
+    barBg: 'bg-cyan-500',
   },
   biology: {
     accent: 'text-emerald-400',
@@ -177,6 +195,8 @@ const SUBJECT_STYLES: Record<
     bgSoft: 'bg-emerald-500/5',
     termBg: 'bg-emerald-500/10',
     termBorder: 'border-emerald-500/20',
+    mcHover: 'hover:border-emerald-500/40',
+    barBg: 'bg-emerald-500',
   },
   'computer-science': {
     accent: 'text-violet-400',
@@ -190,6 +210,8 @@ const SUBJECT_STYLES: Record<
     bgSoft: 'bg-violet-500/5',
     termBg: 'bg-violet-500/10',
     termBorder: 'border-violet-500/20',
+    mcHover: 'hover:border-violet-500/40',
+    barBg: 'bg-violet-500',
   },
 };
 
@@ -202,6 +224,7 @@ function getStyles(subject: Subject | null) {
 // ─────────────────────────────────────────────────────────
 const INITIAL_STATE: GameState = {
   subject: null,
+  userTopic: null,
   activeCases: [],
   currentCaseIndex: 0,
   score: 0,
@@ -209,10 +232,14 @@ const INITIAL_STATE: GameState = {
   view: 'start',
   selectedOption: null,
   isCorrect: null,
+  codeInput: '',
+  caseResults: [],
 };
 
 export default function App() {
   const [gameState, setGameState] = useState<GameState>(INITIAL_STATE);
+  const [topicInput, setTopicInput] = useState('');
+  const [geminiStatus, setGeminiStatus] = useState<'success' | 'fallback' | null>(null);
 
   const activeCases = gameState.activeCases;
   const currentCase = activeCases[gameState.currentCaseIndex] ?? null;
@@ -220,13 +247,23 @@ export default function App() {
   const S = getStyles(gameState.subject);
 
   const goToSubjectSelect = () => {
+    setTopicInput('');
     setGameState({ ...INITIAL_STATE, view: 'subject-select' });
   };
 
+  // Step 1: pick subject → go to topic input screen
   const selectSubject = (subject: Subject) => {
-    const cases = buildActiveCases(subject);
-    setGameState({
-      subject,
+    setTopicInput('');
+    setGameState({ ...INITIAL_STATE, subject, view: 'topic-input' });
+  };
+
+  // Skip topic input → use static question bank
+  const handleTopicSkip = () => {
+    if (!gameState.subject) return;
+    const cases = buildActiveCases(gameState.subject);
+    setGameState(prev => ({
+      ...prev,
+      userTopic: null,
       activeCases: cases,
       currentCaseIndex: 0,
       score: 0,
@@ -234,15 +271,98 @@ export default function App() {
       view: 'investigation',
       selectedOption: null,
       isCorrect: null,
-    });
+      codeInput: '',
+      caseResults: [],
+    }));
+  };
+
+  // Step 2: user typed a topic → Gemini generates all 4 cases
+  const selectTopic = async (topic: string) => {
+    if (!gameState.subject || !topic.trim()) return;
+    const subject = gameState.subject;
+    const trimmed = topic.trim();
+
+    setGeminiStatus(null);
+    setGameState(prev => ({ ...prev, view: 'loading', userTopic: trimmed }));
+
+    let geminiCases: ActiveCase[] | null = null;
+    console.log('[Gemini] isGeminiAvailable:', isGeminiAvailable());
+    if (isGeminiAvailable()) {
+      try {
+        console.log('[Gemini] Calling generateTopicCases for', subject, trimmed);
+        geminiCases = await generateTopicCases(subject, trimmed);
+        console.log('[Gemini] Success, got', geminiCases?.length, 'cases');
+      } catch (err) {
+        console.error('[Gemini] generateTopicCases failed:', err);
+        geminiCases = null;
+      }
+    } else {
+      console.warn('[Gemini] Not available — GEMINI_API_KEY is missing or empty');
+    }
+
+    if (geminiCases && geminiCases.length > 0) {
+      setGeminiStatus('success');
+      setGameState(prev => ({
+        ...prev,
+        activeCases: geminiCases!,
+        currentCaseIndex: 0,
+        score: 0,
+        isGameOver: false,
+        view: 'investigation',
+        selectedOption: null,
+        isCorrect: null,
+        codeInput: '',
+        caseResults: [],
+      }));
+    } else {
+      setGeminiStatus('fallback');
+      const cases = buildActiveCases(subject);
+      setGameState(prev => ({
+        ...prev,
+        activeCases: cases,
+        currentCaseIndex: 0,
+        score: 0,
+        isGameOver: false,
+        view: 'investigation',
+        selectedOption: null,
+        isCorrect: null,
+        codeInput: '',
+        caseResults: [],
+      }));
+    }
+  };
+
+  const recordResult = (correct: boolean) => {
+    if (!currentCase) return;
+    const result: CaseResult = {
+      title: currentCase.title,
+      topic: currentCase.problem.topic,
+      correct,
+    };
+    setGameState(prev => ({ ...prev, caseResults: [...prev.caseResults, result] }));
   };
 
   const handleOptionSelect = (option: string) => {
     if (gameState.isCorrect !== null || !currentCase) return;
     const isCorrect = option === currentCase.problem.correctAnswer;
+    recordResult(isCorrect);
     setGameState(prev => ({
       ...prev,
       selectedOption: option,
+      isCorrect,
+      score: isCorrect ? prev.score + 1 : prev.score,
+    }));
+  };
+
+  const handleCodeSubmit = () => {
+    if (gameState.isCorrect !== null || !currentCase) return;
+    const input = gameState.codeInput.trim();
+    if (!input) return;
+    const isCorrect = input.toLowerCase() === currentCase.problem.correctAnswer.toLowerCase();
+    recordResult(isCorrect);
+    setGameState(prev => ({
+      ...prev,
+      selectedOption: input,
       isCorrect,
       score: isCorrect ? prev.score + 1 : prev.score,
     }));
@@ -255,11 +375,17 @@ export default function App() {
         currentCaseIndex: prev.currentCaseIndex + 1,
         selectedOption: null,
         isCorrect: null,
+        codeInput: '',
       }));
     } else {
       setGameState(prev => ({ ...prev, isGameOver: true, view: 'conclusion' }));
     }
   };
+
+  const answeredCount = gameState.caseResults.length;
+  const accuracyPct = answeredCount > 0
+    ? ((gameState.score / answeredCount) * 100).toFixed(1)
+    : '—';
 
   const resetGame = () => setGameState(INITIAL_STATE);
 
@@ -283,8 +409,8 @@ export default function App() {
       </div>
 
       <div className="relative z-10 max-w-6xl mx-auto p-6 md:p-8 min-h-screen flex flex-col">
-        {/* Persistent Header (shown outside start screen) */}
-        {gameState.view !== 'start' && gameState.view !== 'subject-select' && (
+        {/* Persistent Header */}
+        {(gameState.view === 'investigation' || gameState.view === 'conclusion') && (
           <motion.header
             initial={{ y: -50, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
@@ -303,24 +429,33 @@ export default function App() {
                 </p>
               </div>
             </div>
-            <div className="flex gap-8 text-right">
-              <div className="hidden sm:block">
-                <p className="text-[10px] text-slate-400 uppercase tracking-widest mb-1">Cases Active</p>
-                <p className="text-xl font-mono">
-                  {gameState.currentCaseIndex + 1} / {activeCases.length}
-                </p>
+            <div className="flex gap-8 text-right items-center">
+              {/* Progress dots */}
+              <div className="hidden sm:flex flex-col items-end gap-2">
+                <p className="text-[10px] text-slate-400 uppercase tracking-widest">Progress</p>
+                <div className="flex gap-1.5">
+                  {activeCases.map((_, i) => {
+                    const result = gameState.caseResults[i];
+                    return (
+                      <div
+                        key={i}
+                        className={cn(
+                          'w-2.5 h-2.5 rounded-full transition-colors',
+                          result
+                            ? result.correct ? 'bg-green-400' : 'bg-red-400'
+                            : i === gameState.currentCaseIndex
+                            ? cn('animate-pulse', S.pulse)
+                            : 'bg-white/15',
+                        )}
+                      />
+                    );
+                  })}
+                </div>
               </div>
               <div>
                 <p className="text-[10px] text-slate-400 uppercase tracking-widest mb-1">Accuracy</p>
                 <p className={cn('text-xl font-mono', S.accent)}>
-                  {activeCases.length > 0
-                    ? (
-                        (gameState.score /
-                          (gameState.currentCaseIndex + (gameState.view === 'conclusion' ? 0 : 1))) *
-                        100
-                      ).toFixed(1)
-                    : '0.0'}
-                  %
+                  {accuracyPct === '—' ? '—' : `${accuracyPct}%`}
                 </p>
               </div>
             </div>
@@ -458,6 +593,148 @@ export default function App() {
             </motion.div>
           )}
 
+          {/* ─────── TOPIC INPUT ─────── */}
+          {gameState.view === 'topic-input' && gameState.subject && (
+            <motion.div
+              key="topic-input"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="flex-1 flex flex-col items-center justify-center space-y-10 max-w-2xl mx-auto w-full"
+            >
+              {/* Subject badge */}
+              {(() => {
+                const cfg = SUBJECT_CONFIG.find(c => c.subject === gameState.subject)!;
+                return (
+                  <div className="text-center space-y-3">
+                    <div className={cn('inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-bold tracking-[0.25em] uppercase border', cfg.badge, cfg.badgeBorder)}>
+                      {cfg.icon && <span className="w-3.5 h-3.5">{cfg.icon}</span>}
+                      {cfg.label} Division
+                    </div>
+                    <h2 className="text-4xl md:text-5xl font-black text-white italic uppercase tracking-tighter">
+                      Specify Your <span className={cfg.accent}>Focus</span>
+                    </h2>
+                    <p className="text-slate-400 text-sm max-w-md mx-auto">
+                      Type any topic within {cfg.label} and Gemini will build a full 4-case investigation around it.
+                    </p>
+                  </div>
+                );
+              })()}
+
+              {/* Input */}
+              <div className="w-full space-y-4">
+                <div className={cn(
+                  'flex items-center gap-3 rounded-2xl border transition-colors overflow-hidden',
+                  topicInput
+                    ? cn(SUBJECT_CONFIG.find(c => c.subject === gameState.subject)!.border.replace('hover:', '').split(' ')[0], 'bg-white/5')
+                    : 'border-white/10 bg-white/5 focus-within:border-white/30',
+                )}>
+                  <span className={cn('pl-5 shrink-0', SUBJECT_CONFIG.find(c => c.subject === gameState.subject)!.accent)}>
+                    <Search className="w-4 h-4" />
+                  </span>
+                  <input
+                    type="text"
+                    value={topicInput}
+                    onChange={e => setTopicInput(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && topicInput.trim() && selectTopic(topicInput)}
+                    placeholder={`e.g., ${TOPIC_SUGGESTIONS[gameState.subject][0]}, ${TOPIC_SUGGESTIONS[gameState.subject][1]}…`}
+                    autoFocus
+                    className="flex-1 bg-transparent text-white text-lg font-medium outline-none placeholder:text-slate-600 py-5"
+                  />
+                </div>
+
+                {/* Suggestion chips */}
+                <div className="flex flex-wrap gap-2">
+                  {TOPIC_SUGGESTIONS[gameState.subject].map(s => (
+                    <button
+                      key={s}
+                      onClick={() => { setTopicInput(s); selectTopic(s); }}
+                      className={cn(
+                        'px-3 py-1.5 rounded-lg text-xs font-bold border transition-all',
+                        SUBJECT_CONFIG.find(c => c.subject === gameState.subject)!.badge,
+                        SUBJECT_CONFIG.find(c => c.subject === gameState.subject)!.badgeBorder,
+                        'hover:opacity-80',
+                      )}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex flex-col sm:flex-row gap-3 w-full">
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => topicInput.trim() && selectTopic(topicInput)}
+                  disabled={!topicInput.trim()}
+                  className={cn(
+                    'flex-1 flex items-center justify-center gap-2 py-4 rounded-xl font-bold text-sm uppercase tracking-widest transition-all',
+                    topicInput.trim()
+                      ? cn(SUBJECT_CONFIG.find(c => c.subject === gameState.subject)!.badge, 'border', SUBJECT_CONFIG.find(c => c.subject === gameState.subject)!.badgeBorder, 'hover:opacity-90')
+                      : 'bg-white/5 border border-white/10 text-slate-600 cursor-not-allowed',
+                  )}
+                >
+                  <Brain className="w-4 h-4" />
+                  Generate Investigation
+                </motion.button>
+                <button
+                  onClick={handleTopicSkip}
+                  className="px-6 py-4 rounded-xl text-slate-500 hover:text-slate-300 text-xs uppercase tracking-widest font-bold border border-white/5 hover:border-white/15 transition-all"
+                >
+                  Use Standard Cases
+                </button>
+              </div>
+
+              <button
+                onClick={goToSubjectSelect}
+                className="text-slate-600 hover:text-slate-400 text-xs uppercase tracking-widest font-bold flex items-center gap-2 transition-colors"
+              >
+                <RotateCcw className="w-3 h-3" /> Back to Subject Select
+              </button>
+            </motion.div>
+          )}
+
+          {/* ─────── LOADING ─────── */}
+          {gameState.view === 'loading' && (
+            <motion.div
+              key="loading"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="flex-1 flex flex-col items-center justify-center gap-8 text-center"
+            >
+              <motion.div
+                animate={{ rotate: 360 }}
+                transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
+                className={cn('w-16 h-16 rounded-2xl flex items-center justify-center', S.termBg, S.termBorder, 'border')}
+              >
+                <Search className={cn('w-8 h-8', S.accent)} />
+              </motion.div>
+              <div className="space-y-2">
+                <h2 className="text-3xl font-black text-white uppercase tracking-tight">
+                  Building Your Investigation
+                </h2>
+                <p className={cn('text-sm font-mono', S.accent)}>
+                  Generating 4 custom cases on{' '}
+                  <span className="font-bold">"{gameState.userTopic}"</span>…
+                </p>
+                <p className="text-xs text-slate-600 uppercase tracking-widest mt-4">Powered by Gemini AI</p>
+              </div>
+              <div className="flex gap-2">
+                {[0, 1, 2].map(i => (
+                  <motion.div
+                    key={i}
+                    animate={{ opacity: [0.2, 1, 0.2] }}
+                    transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.3 }}
+                    className={cn('w-2 h-2 rounded-full', S.pulse)}
+                  />
+                ))}
+              </div>
+            </motion.div>
+          )}
+
           {/* ─────── INVESTIGATION ─────── */}
           {gameState.view === 'investigation' && currentCase && (
             <motion.div
@@ -465,8 +742,33 @@ export default function App() {
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
-              className="flex-1 grid grid-cols-12 gap-6"
+              className="flex-1 flex flex-col gap-6"
             >
+              {/* Gemini status banner */}
+              {geminiStatus === 'fallback' && gameState.userTopic && (
+                <motion.div
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="flex items-center gap-3 px-4 py-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-mono"
+                >
+                  <span className="font-bold uppercase tracking-widest shrink-0">⚠ Gemini fallback</span>
+                  <span className="text-amber-400/70">
+                    Could not generate "{gameState.userTopic}" cases — check the browser console for details. Showing standard cases instead.
+                  </span>
+                </motion.div>
+              )}
+              {geminiStatus === 'success' && gameState.currentCaseIndex === 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className={cn('flex items-center gap-3 px-4 py-3 rounded-xl border text-xs font-mono', S.bgSoft, S.borderSoft, S.accent)}
+                >
+                  <span className="font-bold uppercase tracking-widest shrink-0">✦ AI Generated</span>
+                  <span className="opacity-60">4 custom cases on "{gameState.userTopic}" — powered by Gemini</span>
+                </motion.div>
+              )}
+
+              <div className="grid grid-cols-12 gap-6 flex-1">
               {/* Left: Briefing Panel */}
               <div className="col-span-12 lg:col-span-4 flex flex-col gap-6">
                 <motion.section
@@ -534,9 +836,15 @@ export default function App() {
                     transition={{ delay: 0.8 }}
                     className={cn('mt-auto p-5 rounded-2xl border backdrop-blur-md', S.borderSoft, S.bgSoft)}
                   >
+                    {currentCase.hint && (
+                      <div className={cn('flex items-center gap-1.5 mb-2', S.accent)}>
+                        <span className="text-[9px] font-black uppercase tracking-[0.2em]">AI Partner</span>
+                        <span className="text-[9px] font-mono opacity-60">✦ live</span>
+                      </div>
+                    )}
                     <p className="text-xs text-slate-400 leading-relaxed italic">
-                      "If we miss the calculation, the subject escapes. Precision is paramount,
-                      Detective."
+                      "{currentCase.hint
+                        ?? `Analyze the ${currentCase.evidenceType} carefully. Your knowledge of ${currentCase.problem.topic} is the key to cracking this case.`}"
                     </p>
                   </motion.div>
                 </motion.section>
@@ -623,47 +931,129 @@ export default function App() {
                       </p>
                     </motion.div>
 
-                    <motion.div
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      transition={{ delay: 0.7 }}
-                      className="grid grid-cols-1 sm:grid-cols-2 gap-4"
-                    >
-                      {currentCase.problem.options.map((option, idx) => (
-                        <motion.button
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: 0.8 + idx * 0.1 }}
-                          key={option}
-                          onClick={() => handleOptionSelect(option)}
-                          disabled={gameState.isCorrect !== null}
-                          className={cn(
-                            'group relative min-h-16 h-auto rounded-2xl border transition-all duration-300 overflow-hidden text-left px-6 py-4',
-                            gameState.selectedOption === option
-                              ? option === currentCase.problem.correctAnswer
-                                ? 'bg-green-500/20 border-green-500/50 text-green-300 shadow-[0_0_20px_rgba(34,197,94,0.15)]'
-                                : 'bg-red-500/20 border-red-500/50 text-red-300 shadow-[0_0_20px_rgba(239,68,68,0.15)]'
-                              : 'bg-white/5 border-white/10 hover:border-cyan-500/40 hover:bg-white/10 text-slate-300',
-                            gameState.isCorrect !== null &&
-                              option === currentCase.problem.correctAnswer &&
-                              'border-green-500/50',
-                          )}
-                        >
-                          <div className="flex items-center justify-between relative z-10">
-                            <span className="font-mono text-base font-bold tracking-wide leading-snug">
-                              {option}
-                            </span>
-                            {gameState.selectedOption === option &&
-                              (option === currentCase.problem.correctAnswer ? (
-                                <CheckCircle2 className="w-5 h-5 text-green-400 shrink-0 ml-2" />
-                              ) : (
-                                <XCircle className="w-5 h-5 text-red-400 shrink-0 ml-2" />
-                              ))}
-                          </div>
-                          <div className="absolute inset-x-0 bottom-0 h-1 bg-cyan-500 scale-x-0 group-hover:scale-x-100 transition-transform origin-left opacity-30" />
-                        </motion.button>
-                      ))}
-                    </motion.div>
+                    {currentCase.problem.type === 'code-fill' ? (
+                      /* ── Code-fill input ── */
+                      <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ delay: 0.7 }}
+                        className="space-y-4"
+                      >
+                        {/* Code template display */}
+                        {currentCase.problem.codeTemplate && (() => {
+                          const parts = currentCase.problem.codeTemplate.split('___');
+                          return (
+                            <div className="bg-slate-900/70 rounded-xl border border-violet-500/20 overflow-hidden">
+                              <div className="flex items-center gap-2 px-4 py-2 border-b border-violet-500/10 bg-black/20">
+                                <div className="w-2.5 h-2.5 rounded-full bg-red-500/60" />
+                                <div className="w-2.5 h-2.5 rounded-full bg-yellow-500/60" />
+                                <div className="w-2.5 h-2.5 rounded-full bg-green-500/60" />
+                                <span className="text-[10px] text-slate-500 font-mono ml-2 uppercase tracking-widest">
+                                  evidence.py
+                                </span>
+                              </div>
+                              <pre className="font-mono text-sm text-slate-300 whitespace-pre-wrap leading-relaxed p-4">
+                                {parts[0]}
+                                <span className={cn(
+                                  'inline-block min-w-[3ch] border-b-2 text-center px-1 transition-colors font-bold',
+                                  gameState.isCorrect === null
+                                    ? 'border-violet-400 text-violet-400'
+                                    : gameState.isCorrect
+                                    ? 'border-green-400 text-green-300'
+                                    : 'border-red-400 text-red-300',
+                                )}>
+                                  {gameState.isCorrect !== null ? gameState.codeInput : '   '}
+                                </span>
+                                {parts[1]}
+                              </pre>
+                            </div>
+                          );
+                        })()}
+
+                        {/* Text input */}
+                        <div className={cn(
+                          'flex items-center gap-2 rounded-xl border transition-colors overflow-hidden',
+                          gameState.isCorrect === null
+                            ? 'border-violet-500/30 bg-violet-500/5 focus-within:border-violet-500/60'
+                            : gameState.isCorrect
+                            ? 'border-green-500/40 bg-green-500/5'
+                            : 'border-red-500/40 bg-red-500/5',
+                        )}>
+                          <span className="text-violet-400 font-mono text-sm pl-4 shrink-0 select-none">{'>'}</span>
+                          <input
+                            key={currentCase.id}
+                            type="text"
+                            value={gameState.codeInput}
+                            onChange={e => setGameState(prev => ({ ...prev, codeInput: e.target.value }))}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter' && gameState.isCorrect === null && gameState.codeInput.trim()) {
+                                handleCodeSubmit();
+                              }
+                            }}
+                            disabled={gameState.isCorrect !== null}
+                            placeholder="Type your answer and press Enter…"
+                            autoFocus
+                            className="flex-1 bg-transparent text-white font-mono text-sm outline-none placeholder:text-slate-600 py-4"
+                          />
+                          <motion.button
+                            whileTap={{ scale: 0.95 }}
+                            onClick={handleCodeSubmit}
+                            disabled={gameState.isCorrect !== null || !gameState.codeInput.trim()}
+                            className={cn(
+                              'px-5 py-4 font-mono text-xs font-bold uppercase tracking-widest transition-all shrink-0',
+                              gameState.isCorrect !== null || !gameState.codeInput.trim()
+                                ? 'text-slate-600 cursor-not-allowed'
+                                : 'text-violet-300 hover:text-violet-100',
+                            )}
+                          >
+                            Run
+                          </motion.button>
+                        </div>
+                      </motion.div>
+                    ) : (
+                      /* ── Multiple choice grid ── */
+                      <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ delay: 0.7 }}
+                        className="grid grid-cols-1 sm:grid-cols-2 gap-4"
+                      >
+                        {currentCase.problem.options.map((option, idx) => (
+                          <motion.button
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.8 + idx * 0.1 }}
+                            key={option}
+                            onClick={() => handleOptionSelect(option)}
+                            disabled={gameState.isCorrect !== null}
+                            className={cn(
+                              'group relative min-h-16 h-auto rounded-2xl border transition-all duration-300 overflow-hidden text-left px-6 py-4',
+                              gameState.selectedOption === option
+                                ? option === currentCase.problem.correctAnswer
+                                  ? 'bg-green-500/20 border-green-500/50 text-green-300 shadow-[0_0_20px_rgba(34,197,94,0.15)]'
+                                  : 'bg-red-500/20 border-red-500/50 text-red-300 shadow-[0_0_20px_rgba(239,68,68,0.15)]'
+                                : cn('bg-white/5 border-white/10 hover:bg-white/10 text-slate-300', S.mcHover),
+                              gameState.isCorrect !== null &&
+                                option === currentCase.problem.correctAnswer &&
+                                'border-green-500/50',
+                            )}
+                          >
+                            <div className="flex items-center justify-between relative z-10">
+                              <span className="font-mono text-base font-bold tracking-wide leading-snug">
+                                {option}
+                              </span>
+                              {gameState.selectedOption === option &&
+                                (option === currentCase.problem.correctAnswer ? (
+                                  <CheckCircle2 className="w-5 h-5 text-green-400 shrink-0 ml-2" />
+                                ) : (
+                                  <XCircle className="w-5 h-5 text-red-400 shrink-0 ml-2" />
+                                ))}
+                            </div>
+                            <div className={cn('absolute inset-x-0 bottom-0 h-1 scale-x-0 group-hover:scale-x-100 transition-transform origin-left opacity-30', S.barBg)} />
+                          </motion.button>
+                        ))}
+                      </motion.div>
+                    )}
                   </div>
 
                   {/* Feedback panel */}
@@ -709,6 +1099,16 @@ export default function App() {
                                   {currentCase.problem.explanation}
                                 </p>
                               </div>
+                              {currentCase.problem.type === 'code-fill' && !gameState.isCorrect && (
+                                <div className="pt-3 border-t border-white/10 space-y-1">
+                                  <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest">
+                                    Correct Answer
+                                  </p>
+                                  <p className="text-sm text-green-400 font-mono font-bold">
+                                    {currentCase.problem.correctAnswer}
+                                  </p>
+                                </div>
+                              )}
                             </div>
 
                             <div className="flex flex-col gap-3 shrink-0 sm:w-48">
@@ -742,94 +1142,141 @@ export default function App() {
                   </AnimatePresence>
                 </motion.section>
               </div>
+              </div>
             </motion.div>
           )}
 
           {/* ─────── CONCLUSION ─────── */}
-          {gameState.view === 'conclusion' && (
-            <motion.div
-              key="conclusion"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="flex-1 flex flex-col items-center justify-center text-center space-y-12"
-            >
-              <div className="space-y-4">
-                <div className={cn('inline-block px-4 py-1 rounded-full text-xs font-bold tracking-[0.3em] uppercase border', S.badgeBg, S.badgeBorder, S.badgeText)}>
-                  Investigation Pipeline Terminates
-                </div>
-                <h2 className="text-6xl md:text-8xl font-black text-white italic uppercase tracking-tighter">
-                  Case <span className={S.accent}>Closed</span>
-                </h2>
-                {subjectMeta && (
-                  <p className="text-slate-500 uppercase tracking-widest text-xs font-bold">
-                    {subjectMeta.title} Division
-                  </p>
-                )}
-              </div>
-
+          {gameState.view === 'conclusion' && (() => {
+            const total = activeCases.length;
+            const score = gameState.score;
+            const pct = total > 0 ? Math.round((score / total) * 100) : 0;
+            const rank =
+              score === total ? 'Master Analyst' :
+              score === total - 1 ? 'Senior Specialist' :
+              score === total - 2 ? 'Field Operative' :
+              score === 1 ? 'Junior Trainee' :
+              'Rookie Recruit';
+            const rankMsg =
+              score === total
+                ? 'Flawless. Every suspect apprehended, every clue decoded. The city is safer because of you.'
+                : score === total - 1
+                ? 'Outstanding work. One slip won\'t define you — the department is impressed.'
+                : score === total - 2
+                ? 'Solid performance. Review the cases you missed and come back sharper.'
+                : score === 1
+                ? 'A single resolve. The field is unforgiving — study hard before the next assignment.'
+                : 'The suspects walked free this time. Hit the books, Detective. The city needs you ready.';
+            return (
               <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.3 }}
-                className="grid grid-cols-1 md:grid-cols-12 gap-8 w-full max-w-4xl"
+                key="conclusion"
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="flex-1 flex flex-col items-center justify-center text-center space-y-10"
               >
-                <div className="md:col-span-4 backdrop-blur-xl bg-white/5 border border-white/10 rounded-3xl p-10 flex flex-col items-center justify-center">
-                  <p className="text-[10px] text-slate-500 uppercase tracking-widest font-black mb-4">
-                    Total Resolves
-                  </p>
-                  <motion.div
-                    initial={{ scale: 0.5, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    transition={{ type: 'spring', stiffness: 100, delay: 0.5 }}
-                    className="text-8xl font-black text-white tracking-widest"
-                  >
-                    {gameState.score}
-                  </motion.div>
-                  <div className="text-xs text-slate-400 mt-4 font-mono font-bold uppercase tracking-widest">
-                    Efficiency:{' '}
-                    {activeCases.length > 0
-                      ? ((gameState.score / activeCases.length) * 100).toFixed(0)
-                      : 0}
-                    %
+                <div className="space-y-3">
+                  <div className={cn('inline-block px-4 py-1 rounded-full text-xs font-bold tracking-[0.3em] uppercase border', S.badgeBg, S.badgeBorder, S.badgeText)}>
+                    Investigation Complete
                   </div>
+                  <h2 className="text-6xl md:text-8xl font-black text-white italic uppercase tracking-tighter">
+                    Case <span className={S.accent}>Closed</span>
+                  </h2>
+                  {subjectMeta && (
+                    <p className="text-slate-500 uppercase tracking-widest text-xs font-bold">
+                      {subjectMeta.title} Division
+                    </p>
+                  )}
                 </div>
 
-                <div className={cn('md:col-span-8 backdrop-blur-xl border rounded-3xl p-10 flex flex-col items-center justify-center text-left md:items-start', S.cardBg, S.cardBorder)}>
-                  <div className={cn('text-[10px] uppercase tracking-[0.3em] font-black mb-6 border-b pb-2 w-full', S.accent, S.cardBorder)}>
-                    Final Performance Audit
+                {/* Score + rank */}
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.2 }}
+                  className="grid grid-cols-1 md:grid-cols-12 gap-6 w-full max-w-4xl"
+                >
+                  <div className="md:col-span-4 backdrop-blur-xl bg-white/5 border border-white/10 rounded-3xl p-8 flex flex-col items-center justify-center gap-2">
+                    <p className="text-[10px] text-slate-500 uppercase tracking-widest font-black">Score</p>
+                    <motion.div
+                      initial={{ scale: 0.5, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      transition={{ type: 'spring', stiffness: 120, delay: 0.4 }}
+                      className="text-8xl font-black text-white"
+                    >
+                      {score}<span className="text-3xl text-slate-600">/{total}</span>
+                    </motion.div>
+                    <div className={cn('text-sm font-mono font-bold', pct === 100 ? 'text-green-400' : pct >= 50 ? S.accent : 'text-red-400')}>
+                      {pct}% accuracy
+                    </div>
                   </div>
-                  <div className="text-4xl font-black text-white mb-4 italic uppercase">
-                    {gameState.score === activeCases.length
-                      ? 'Master Analyst'
-                      : gameState.score > activeCases.length / 2
-                      ? 'Senior Specialist'
-                      : 'Junior Operative'}
+
+                  <div className={cn('md:col-span-8 backdrop-blur-xl border rounded-3xl p-8 flex flex-col justify-center text-left', S.cardBg, S.cardBorder)}>
+                    <div className={cn('text-[10px] uppercase tracking-[0.3em] font-black mb-4 border-b pb-2', S.accent, S.cardBorder)}>
+                      Final Performance Audit
+                    </div>
+                    <div className="text-3xl font-black text-white mb-3 italic uppercase">{rank}</div>
+                    <p className="text-slate-400 leading-relaxed italic text-sm max-w-md">{rankMsg}</p>
                   </div>
-                  <p className="text-slate-400 leading-relaxed text-lg italic max-w-md">
-                    {gameState.score === activeCases.length
-                      ? 'Your precision is the foundation of order in this city. Every question answered was a suspect apprehended. Exceptional work.'
-                      : 'The field is chaotic, and knowledge is the only tool that can tame it. You showed promise, detective, but the streets demand perfection.'}
-                  </p>
+                </motion.div>
+
+                {/* Per-case breakdown */}
+                {gameState.caseResults.length > 0 && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.4 }}
+                    className="w-full max-w-4xl"
+                  >
+                    <p className="text-[10px] text-slate-500 uppercase tracking-widest font-black mb-4 text-left">
+                      Case Breakdown
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {gameState.caseResults.map((r, i) => (
+                        <motion.div
+                          key={i}
+                          initial={{ opacity: 0, x: -10 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: 0.5 + i * 0.08 }}
+                          className={cn(
+                            'flex items-center gap-4 p-4 rounded-2xl border',
+                            r.correct
+                              ? 'bg-green-500/5 border-green-500/20'
+                              : 'bg-red-500/5 border-red-500/20',
+                          )}
+                        >
+                          <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center shrink-0', r.correct ? 'bg-green-500/20' : 'bg-red-500/20')}>
+                            {r.correct
+                              ? <CheckCircle2 className="w-4 h-4 text-green-400" />
+                              : <XCircle className="w-4 h-4 text-red-400" />}
+                          </div>
+                          <div className="text-left min-w-0">
+                            <p className="text-xs font-bold text-white truncate">{r.title}</p>
+                            <p className="text-[10px] text-slate-500 font-mono">{r.topic}</p>
+                          </div>
+                        </motion.div>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+
+                <div className="flex flex-col sm:flex-row gap-4">
+                  <button
+                    onClick={goToSubjectSelect}
+                    className="flex items-center justify-center gap-3 px-10 py-5 bg-white text-slate-950 font-bold rounded-2xl hover:bg-slate-200 transition-all shadow-[0_0_30px_rgba(255,255,255,0.1)] group"
+                  >
+                    <RotateCcw className="w-5 h-5 group-hover:rotate-180 transition-transform duration-500" />
+                    New Investigation
+                  </button>
+                  <button
+                    onClick={resetGame}
+                    className="flex items-center justify-center gap-3 px-10 py-5 bg-white/10 hover:bg-white/15 border border-white/10 text-white font-bold rounded-2xl transition-all"
+                  >
+                    Return to Start
+                  </button>
                 </div>
               </motion.div>
-
-              <div className="flex flex-col sm:flex-row gap-4">
-                <button
-                  onClick={goToSubjectSelect}
-                  className="flex items-center justify-center gap-3 px-10 py-5 bg-white text-slate-950 font-bold rounded-2xl hover:bg-slate-200 transition-all shadow-[0_0_30px_rgba(255,255,255,0.1)] group"
-                >
-                  <RotateCcw className="w-5 h-5 group-hover:rotate-180 transition-transform duration-500" />
-                  NEW INVESTIGATION
-                </button>
-                <button
-                  onClick={resetGame}
-                  className="flex items-center justify-center gap-3 px-10 py-5 bg-white/10 hover:bg-white/15 border border-white/10 text-white font-bold rounded-2xl transition-all"
-                >
-                  Return to Start
-                </button>
-              </div>
-            </motion.div>
-          )}
+            );
+          })()}
         </AnimatePresence>
 
         <footer className="mt-auto pt-12 pb-6 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-white/5">

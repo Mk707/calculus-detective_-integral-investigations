@@ -1,7 +1,9 @@
 export type Subject = 'calculus' | 'biology' | 'computer-science';
 
 export interface QuestionVariant {
+  type?: 'multiple-choice' | 'code-fill';
   formula?: string;
+  codeTemplate?: string;
   question: string;
   correctAnswer: string;
   options: string[];
@@ -37,15 +39,25 @@ export interface ActiveCase {
   problem: QuestionVariant;
   successStory: string;
   failureStory: string;
+  hint?: string;
+}
+
+export interface CaseResult {
+  title: string;
+  topic: string;
+  correct: boolean;
 }
 
 export interface GameState {
   subject: Subject | null;
+  userTopic: string | null;
   activeCases: ActiveCase[];
   currentCaseIndex: number;
   score: number;
   isGameOver: boolean;
-  view: 'start' | 'subject-select' | 'investigation' | 'conclusion';
+  view: 'start' | 'subject-select' | 'topic-input' | 'loading' | 'investigation' | 'conclusion';
   selectedOption: string | null;
   isCorrect: boolean | null;
+  codeInput: string;
+  caseResults: CaseResult[];
 }
