@@ -220,12 +220,11 @@ export default function App() {
   const currentCase = activeCases[gameState.currentCaseIndex] ?? null;
   const subjectMeta = gameState.subject ? getSubjectMeta(gameState.subject) : null;
   const S = getStyles(gameState.subject);
-  const mascotState =
-    gameState.isCorrect === null
-      ? 'thinking'
-      : gameState.isCorrect
-      ? 'correct'
-      : 'wrong';
+  const mascotState = gameState.isCorrect === null
+    ? 'thinking'
+    : gameState.isCorrect
+    ? 'correct'
+    : 'wrong';
 
   const goToSubjectSelect = () => {
     setGameState({ ...INITIAL_STATE, view: 'subject-select' });
@@ -234,16 +233,12 @@ export default function App() {
   const selectSubject = (subject: Subject) => {
     const cases = buildActiveCases(subject);
     setGameState({
+      ...INITIAL_STATE,
       subject,
       activeCases: cases,
       currentCaseIndex: 0,
-    // Removed mascotState definition from here as it is now defined in the App component scope
+      view: 'investigation',
     });
-    const mascotState = gameState.isCorrect === null
-    ? 'thinking'
-    : gameState.isCorrect
-    ? 'correct'
-    : 'wrong';
   };
 
   const handleOptionSelect = (option: string) => {
