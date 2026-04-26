@@ -2,6 +2,7 @@ import { motion } from 'motion/react';
 
 interface FloatingShapesProps {
   colorScheme?: 'cyan' | 'green' | 'yellow' | 'red' | 'purple' | 'orange';
+  subject?: 'calculus' | 'biology' | 'computer-science' | null;
 }
 
 const colorSchemes = {
@@ -24,9 +25,9 @@ const TEXT_SIZES: Record<ShapeSize, string> = {
 };
 
 const OPACITY: Record<string, string> = {
-  high:   'opacity-[0.14]',
-  mid:    'opacity-[0.10]',
-  low:    'opacity-[0.07]',
+  high:   'opacity-[0.28]',
+  mid:    'opacity-[0.20]',
+  low:    'opacity-[0.14]',
 };
 
 interface Shape {
@@ -153,14 +154,47 @@ function AtomIcon({ size }: { size: ShapeSize }) {
 
 // ── Component ─────────────────────────────────────────────────────────
 
-export function FloatingShapes({ colorScheme = 'cyan' }: FloatingShapesProps) {
+const MATH_SYMBOLS_BY_SHAPE_INDEX: Record<number, string> = {
+  7: '\u222b',
+  8: '\u2211',
+  9: '\u03c0',
+  10: '\u0394',
+  11: '\u2202',
+  12: '\u2207',
+  13: '\u00b1',
+  14: '\u221e',
+  15: '\u221a',
+  16: '\u03b8',
+  17: '\u03bb',
+  18: '\u2260',
+  19: '\u2208',
+  20: '\u03b1',
+};
+
+function shouldShowShape(
+  subject: FloatingShapesProps['subject'],
+  type: Shape['type'],
+) {
+  if (!subject) return true;
+  if (subject === 'calculus') return type === 'math' || type === 'num';
+  if (subject === 'biology') return type === 'dna' || type === 'atom';
+  return type === 'code' || type === 'num';
+}
+
+export function FloatingShapes({ colorScheme = 'cyan', subject = null }: FloatingShapesProps) {
   const colors = colorSchemes[colorScheme];
+  const visibleShapes = shapes
+    .map((shape, index) => ({ shape, index }))
+    .filter(({ shape }) => shouldShowShape(subject, shape.type));
 
   return (
-    <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
-      {shapes.map((shape, i) => {
+    <div className="fixed inset-0 overflow-hidden pointer-events-none z-[1]">
+      {visibleShapes.map(({ shape, index }, i) => {
         const colorClass = colors[i % colors.length];
         const opacityClass = OPACITY[shape.op ?? 'mid'];
+        const displayedContent = shape.type === 'math'
+          ? MATH_SYMBOLS_BY_SHAPE_INDEX[index] ?? shape.content
+          : shape.content;
 
         // Build animate and transition separately — avoids the [0,0]/empty-object bug
         const animateObj = shape.spin
@@ -180,7 +214,7 @@ export function FloatingShapes({ colorScheme = 'cyan' }: FloatingShapesProps) {
 
         return (
           <motion.div
-            key={`${colorScheme}-${i}`}
+            key={`${colorScheme}-${subject ?? 'all'}-${index}`}
             className={`absolute ${colorClass} ${opacityClass}`}
             style={{ left: shape.x }}
             initial={{ y: '-8vh', rotate: 0, scale: 1 }}
@@ -190,7 +224,7 @@ export function FloatingShapes({ colorScheme = 'cyan' }: FloatingShapesProps) {
             {shape.type === 'dna'  && <DnaHelix size={shape.size} />}
             {shape.type === 'atom' && <AtomIcon size={shape.size} />}
             {(shape.type === 'math' || shape.type === 'code' || shape.type === 'num') && (
-              <div className={`${TEXT_SIZES[shape.size]} drop-shadow-lg`}>{shape.content}</div>
+              <div className={`${TEXT_SIZES[shape.size]} drop-shadow-[0_0_16px_currentColor]`}>{displayedContent}</div>
             )}
           </motion.div>
         );

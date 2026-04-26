@@ -47,6 +47,7 @@ export interface CaseResult {
   title: string;
   topic: string;
   correct: boolean;
+  youtubeUrl: string;
 }
 
 export type QuestionLimit = 5 | 10 | null;

@@ -131,6 +131,33 @@ const SUBJECT_CONFIG: {
   },
 ];
 
+interface BestScoreRecord {
+  score: number;
+  total: number;
+  pct: number;
+}
+
+function getBestScoreKey(subject: Subject, difficulty: Difficulty): string {
+  return `stemtective-best-score:${subject}:${difficulty}`;
+}
+
+function readBestScore(subject: Subject, difficulty: Difficulty): BestScoreRecord | null {
+  try {
+    const raw = window.localStorage.getItem(getBestScoreKey(subject, difficulty));
+    return raw ? JSON.parse(raw) as BestScoreRecord : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeBestScore(subject: Subject, difficulty: Difficulty, record: BestScoreRecord) {
+  try {
+    window.localStorage.setItem(getBestScoreKey(subject, difficulty), JSON.stringify(record));
+  } catch {
+    // Local storage can be unavailable in restricted browser contexts.
+  }
+}
+
 const TOPIC_SUGGESTIONS: Record<Subject, string[]> = {
   calculus: ['Derivatives', 'Integrals', 'Limits', 'Chain Rule', 'Related Rates', 'Optimization'],
   biology: ['Genetics', 'Cell Biology', 'Evolution', 'DNA & RNA', 'Ecosystems', 'Photosynthesis'],
@@ -346,6 +373,7 @@ export default function App() {
   const [topicInput, setTopicInput] = useState('');
   const [geminiStatus, setGeminiStatus] = useState<'success' | 'fallback' | null>(null);
   const [showExitModal, setShowExitModal] = useState(false);
+  const [bestScore, setBestScore] = useState<BestScoreRecord | null>(null);
 
   const activeCases = gameState.activeCases;
   const currentCase = activeCases[gameState.currentCaseIndex] ?? null;
@@ -393,7 +421,12 @@ export default function App() {
               selectedOption: option,
               isCorrect,
               score: isCorrect ? prev.score + 1 : prev.score,
-              caseResults: [...prev.caseResults, { title: currentCase.title, topic: currentCase.problem.topic, correct: isCorrect }],
+              caseResults: [...prev.caseResults, {
+                title: currentCase.title,
+                topic: currentCase.problem.topic,
+                correct: isCorrect,
+                youtubeUrl: currentCase.problem.youtubeUrl,
+              }],
             }));
           }
         }
@@ -402,6 +435,36 @@ export default function App() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [gameState, currentCase, showExitModal, activeCases, S.confettiColors]);
+
+  useEffect(() => {
+    if (!gameState.subject || !gameState.difficulty) {
+      setBestScore(null);
+      return;
+    }
+
+    setBestScore(readBestScore(gameState.subject, gameState.difficulty));
+  }, [gameState.subject, gameState.difficulty]);
+
+  useEffect(() => {
+    if (gameState.view !== 'conclusion' || !gameState.subject || !gameState.difficulty || activeCases.length === 0) return;
+
+    const nextBest = {
+      score: gameState.score,
+      total: activeCases.length,
+      pct: Math.round((gameState.score / activeCases.length) * 100),
+    };
+    const savedBest = readBestScore(gameState.subject, gameState.difficulty);
+    const isNewBest = !savedBest ||
+      nextBest.pct > savedBest.pct ||
+      (nextBest.pct === savedBest.pct && nextBest.score > savedBest.score);
+
+    if (isNewBest) {
+      writeBestScore(gameState.subject, gameState.difficulty, nextBest);
+      setBestScore(nextBest);
+    } else {
+      setBestScore(savedBest);
+    }
+  }, [gameState.view, gameState.subject, gameState.difficulty, gameState.score, activeCases.length]);
 
   // ── Confetti ────────────────────────────────────────────
   function fireConfetti(colors: string[]) {
@@ -508,7 +571,12 @@ export default function App() {
     setGameState(prev => ({
       ...prev, selectedOption: option, isCorrect,
       score: isCorrect ? prev.score + 1 : prev.score,
-      caseResults: [...prev.caseResults, { title: currentCase.title, topic: currentCase.problem.topic, correct: isCorrect }],
+      caseResults: [...prev.caseResults, {
+        title: currentCase.title,
+        topic: currentCase.problem.topic,
+        correct: isCorrect,
+        youtubeUrl: currentCase.problem.youtubeUrl,
+      }],
     }));
   };
 
@@ -523,7 +591,12 @@ export default function App() {
     setGameState(prev => ({
       ...prev, selectedOption: input, isCorrect,
       score: isCorrect ? prev.score + 1 : prev.score,
-      caseResults: [...prev.caseResults, { title: currentCase.title, topic: currentCase.problem.topic, correct: isCorrect }],
+      caseResults: [...prev.caseResults, {
+        title: currentCase.title,
+        topic: currentCase.problem.topic,
+        correct: isCorrect,
+        youtubeUrl: currentCase.problem.youtubeUrl,
+      }],
     }));
   };
 
@@ -541,6 +614,11 @@ export default function App() {
 
   const answeredCount = gameState.caseResults.length;
   const accuracyPct = answeredCount > 0 ? ((gameState.score / answeredCount) * 100).toFixed(1) : '—';
+  const displayedStreak = gameState.caseResults
+    .slice()
+    .reverse()
+    .findIndex(result => !result.correct);
+  const currentStreak = displayedStreak === -1 ? gameState.caseResults.length : displayedStreak;
   const resetGame = () => { playPop(); setGameState(INITIAL_STATE); };
 
   const detectiveScheme = getDetectiveScheme(gameState.subject, gameState.view);
@@ -557,13 +635,13 @@ export default function App() {
     'center';
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans relative overflow-x-hidden selection:bg-cyan-500/30 cursor-none">
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans relative isolate overflow-x-hidden selection:bg-cyan-500/30 cursor-none">
 
       {/* ── Floating shapes (Figma Make) ─────────────────── */}
-      <FloatingShapes colorScheme={floatingColor} />
+      <FloatingShapes colorScheme={floatingColor} subject={gameState.subject} />
 
       {/* ── Background ───────────────────────────────────── */}
-      <div className="fixed inset-0 pointer-events-none">
+      <div className="fixed inset-0 pointer-events-none z-0">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_65%_15%,_#0f172a_0%,_#020617_100%)]" />
         <div
           className="absolute inset-0 opacity-30"
@@ -658,6 +736,24 @@ export default function App() {
                   })}
                 </div>
               </div>
+
+              {/* Streak */}
+              <div className="hidden md:block text-right">
+                <p className="text-[9px] text-slate-500 uppercase tracking-widest font-bold mb-0.5">Streak</p>
+                <p className={cn('text-lg font-mono font-black leading-none', currentStreak > 0 ? 'text-green-400' : 'text-slate-500')}>
+                  {currentStreak}
+                </p>
+              </div>
+
+              {/* Best score */}
+              {bestScore && (
+                <div className="hidden lg:block text-right">
+                  <p className="text-[9px] text-slate-500 uppercase tracking-widest font-bold mb-0.5">Best</p>
+                  <p className="text-lg font-mono font-black leading-none text-amber-300">
+                    {bestScore.pct}%
+                  </p>
+                </div>
+              )}
 
               {/* Accuracy */}
               <div className="text-right">
@@ -1595,9 +1691,10 @@ export default function App() {
                     <AnimatePresence>
                       {gameState.isCorrect !== null && (
                         <motion.div
-                          initial={{ opacity: 0, y: 16, height: 0 }}
+                          initial={{ opacity: 0, y: 8, height: 0 }}
                           animate={{ opacity: 1, y: 0, height: 'auto' }}
-                          exit={{ opacity: 0, y: 8, height: 0 }}
+                          exit={{ opacity: 0, y: 4, height: 0 }}
+                          transition={{ duration: 0.18, ease: 'easeOut' }}
                           className={cn(
                             'mt-6 rounded-2xl border overflow-hidden',
                             gameState.isCorrect
@@ -1723,6 +1820,20 @@ export default function App() {
                 : score === 1
                 ? 'A single resolve. The field is unforgiving — study hard before the next assignment.'
                 : 'The suspects walked free this time. Hit the books, Detective. The city needs you ready.';
+            const missedResults = gameState.caseResults.filter((r: CaseResult) => !r.correct);
+            const reviewSource = missedResults.length > 0 ? missedResults : gameState.caseResults;
+            const seenVideoUrls = new Set<string>();
+            const recommendedVideos = reviewSource
+              .filter((r: CaseResult) => {
+                if (!r.youtubeUrl || seenVideoUrls.has(r.youtubeUrl)) return false;
+                seenVideoUrls.add(r.youtubeUrl);
+                return true;
+              })
+              .slice(0, 4);
+            const reviewTitle = missedResults.length > 0 ? 'Recommended Review' : 'Reinforcement Videos';
+            const reviewSubtitle = missedResults.length > 0
+              ? 'Focused on the questions that went cold.'
+              : 'Clean case file. Keep these topics sharp.';
             return (
               <motion.div
                 key="conclusion"
@@ -1771,6 +1882,11 @@ export default function App() {
                           >
                             {score}<span className="text-xl text-slate-600">/{total}</span>
                           </motion.p>
+                          {bestScore && (
+                            <p className="text-[10px] text-amber-300 font-mono font-bold mt-2">
+                              BEST {bestScore.score}/{bestScore.total} ({bestScore.pct}%)
+                            </p>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -1825,6 +1941,63 @@ export default function App() {
                             <p className="text-[10px] text-slate-600 font-mono">{r.topic}</p>
                           </div>
                         </motion.div>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+
+                {/* Recommended videos */}
+                {recommendedVideos.length > 0 && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.4 }}
+                    className="w-full max-w-4xl"
+                  >
+                    <div className="flex items-end justify-between gap-4 mb-4">
+                      <div className="text-left">
+                        <p className="text-[9px] text-slate-600 uppercase tracking-widest font-black mb-1">
+                          {reviewTitle}
+                        </p>
+                        <p className="text-xs text-slate-500">{reviewSubtitle}</p>
+                      </div>
+                      <div className={cn('hidden sm:flex items-center gap-2 text-[9px] uppercase tracking-widest font-black', S.accent)}>
+                        <Youtube className="w-3.5 h-3.5" />
+                        Tutorial Queue
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {recommendedVideos.map((r: CaseResult, i: number) => (
+                        <motion.a
+                          key={`${r.youtubeUrl}-${i}`}
+                          href={r.youtubeUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={() => playPop()}
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: 0.5 + i * 0.07 }}
+                          className="group flex items-center gap-4 rounded-2xl border border-red-500/20 bg-red-500/8 hover:bg-red-500/14 hover:border-red-500/40 p-4 text-left transition-all"
+                        >
+                          <div className="w-10 h-10 rounded-xl bg-red-500/15 border border-red-500/25 flex items-center justify-center shrink-0 text-red-300 group-hover:text-red-200">
+                            <Youtube className="w-5 h-5" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2 mb-1">
+                              <span className={cn('rounded-md border px-2 py-0.5 text-[9px] font-black uppercase tracking-widest', S.badgeBg, S.badgeBorder, S.badgeText)}>
+                                {r.topic}
+                              </span>
+                              {!r.correct && (
+                                <span className="rounded-md border border-red-500/25 bg-red-500/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-red-300">
+                                  Missed
+                                </span>
+                              )}
+                            </div>
+                            <p className="truncate text-sm font-bold text-white">{r.title}</p>
+                          </div>
+                          <ExternalLink className="w-4 h-4 text-slate-600 group-hover:text-red-300 shrink-0 transition-colors" />
+                        </motion.a>
                       ))}
                     </div>
                   </motion.div>
