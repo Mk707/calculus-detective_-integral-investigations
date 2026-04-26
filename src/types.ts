@@ -48,4 +48,5 @@ export interface GameState {
   view: 'start' | 'subject-select' | 'investigation' | 'conclusion';
   selectedOption: string | null;
   isCorrect: boolean | null;
+  shuffledCases: CrimeCase[];
 }

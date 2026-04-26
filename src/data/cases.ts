@@ -26,7 +26,7 @@ export const INITIAL_CASES = [
     problem: {
       topic: 'Integral',
       formula: 'f(x) = 3x^2 + 2',
-      question: 'Find the total force absorbed over the interval [0, 2] by calculating \\int_{0}^{2} (3x^2 + 2) dx.',
+      question: 'Find the total force absorbed over the interval [0, 2] by calculating f(x)= (3x^2 + 2) dx.',
       correctAnswer: '12',
       options: ['8', '10', '12', '14'],
       explanation: 'The integral is \\int (3x^2 + 2) dx = x^3 + 2x. Evaluating from 0 to 2: (2^3 + 2(2)) - (0) = 8 + 4 = 12.',
