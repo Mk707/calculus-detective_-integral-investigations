@@ -767,34 +767,41 @@ export const SUBJECT_BANKS: SubjectBank[] = [
   },
 ];
 
-export function buildActiveCases(subject: Subject, difficulty: Difficulty = 'medium'): ActiveCase[] {
+export function buildActiveCases(
+  subject: Subject,
+  difficulty: Difficulty = 'medium',
+  limit: 5 | 10 | null = null,
+): ActiveCase[] {
   const bank = SUBJECT_BANKS.find(b => b.subject === subject);
   if (!bank) return [];
 
-  return bank.levels.map(level => {
-    let idx: number;
-    if (difficulty === 'easy') {
-      // Always pick the first (simplest) question variant in each level
-      idx = 0;
-    } else if (difficulty === 'hard') {
-      // Always pick the last (hardest) question variant in each level
-      idx = level.questions.length - 1;
-    } else {
-      // Medium: random pick (original behaviour)
-      idx = Math.floor(Math.random() * level.questions.length);
+  // Build a pool: easy/hard use the first/last 2 questions per level; medium uses all 4
+  const pool: ActiveCase[] = [];
+  for (const level of bank.levels) {
+    const indices =
+      difficulty === 'easy' ? [0, 1] :
+      difficulty === 'hard' ? [level.questions.length - 2, level.questions.length - 1] :
+      level.questions.map((_, i) => i);
+
+    for (const idx of indices) {
+      if (idx < 0 || idx >= level.questions.length) continue;
+      pool.push({
+        id: level.id,
+        title: level.title,
+        description: level.description,
+        location: level.location,
+        evidenceType: level.evidenceType,
+        problem: level.questions[idx],
+        successStory: level.successStory,
+        failureStory: level.failureStory,
+      });
     }
-    const question = level.questions[idx];
-    return {
-      id: level.id,
-      title: level.title,
-      description: level.description,
-      location: level.location,
-      evidenceType: level.evidenceType,
-      problem: question,
-      successStory: level.successStory,
-      failureStory: level.failureStory,
-    };
-  });
+  }
+
+  // Shuffle
+  const shuffled = [...pool].sort(() => Math.random() - 0.5);
+  const count = limit === null ? shuffled.length : Math.min(limit, shuffled.length);
+  return shuffled.slice(0, count);
 }
 
 export function getSubjectMeta(subject: Subject) {

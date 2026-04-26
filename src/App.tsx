@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import {
   Search,
   Target,
+  GraduationCap,
   Brain,
   Terminal as TerminalIcon,
   MapPin,
@@ -21,11 +22,18 @@ import {
   Zap,
   Shield,
   BookOpen,
+  FileText,
+  Layers,
+  Infinity as InfinityIcon,
 } from 'lucide-react';
+import confetti from 'canvas-confetti';
 import { buildActiveCases, getSubjectMeta } from './data/questionBanks';
 import { generateTopicCases, isGeminiAvailable } from './lib/gemini';
-import { ActiveCase, CaseResult, Difficulty, GameState, Subject } from './types';
+import { ActiveCase, CaseResult, Difficulty, GameState, QuestionLimit, Subject } from './types';
 import { cn } from './lib/utils';
+import { playPop } from './lib/sound';
+import { Detective } from './components/Detective';
+import { FloatingShapes } from './components/FloatingShapes';
 // @ts-ignore
 import 'katex/dist/katex.min.css';
 // @ts-ignore
@@ -45,13 +53,11 @@ function DetectiveSilhouette() {
 
   return (
     <>
-      {/* Cursor follow glow */}
       <motion.div
         animate={{ x: mousePos.x, y: mousePos.y }}
         transition={{ type: 'spring', damping: 30, stiffness: 200, mass: 0.5 }}
         className="absolute top-0 left-0 w-[700px] h-[700px] -translate-x-1/2 -translate-y-1/2 bg-[radial-gradient(circle,rgba(6,182,212,0.12)_0%,transparent_70%)] z-0 pointer-events-none"
       />
-      {/* Custom crosshair cursor */}
       <motion.div
         animate={{ x: mousePos.x, y: mousePos.y }}
         transition={{ type: 'spring', damping: 20, stiffness: 300, mass: 0.2 }}
@@ -82,6 +88,7 @@ const SUBJECT_CONFIG: {
   badge: string;
   badgeBorder: string;
   accentHex: string;
+  floatingColor: 'cyan' | 'green' | 'purple';
 }[] = [
   {
     subject: 'calculus',
@@ -94,6 +101,7 @@ const SUBJECT_CONFIG: {
     badge: 'bg-cyan-500/15 text-cyan-300',
     badgeBorder: 'border-cyan-500/30',
     accentHex: '#22d3ee',
+    floatingColor: 'cyan',
   },
   {
     subject: 'biology',
@@ -106,6 +114,7 @@ const SUBJECT_CONFIG: {
     badge: 'bg-emerald-500/15 text-emerald-300',
     badgeBorder: 'border-emerald-500/30',
     accentHex: '#34d399',
+    floatingColor: 'green',
   },
   {
     subject: 'computer-science',
@@ -118,6 +127,7 @@ const SUBJECT_CONFIG: {
     badge: 'bg-violet-500/15 text-violet-300',
     badgeBorder: 'border-violet-500/30',
     accentHex: '#a78bfa',
+    floatingColor: 'purple',
   },
 ];
 
@@ -133,6 +143,7 @@ const SUBJECT_STYLES: Record<
     accent: string; pulse: string; badgeText: string; badgeBg: string; badgeBorder: string;
     cardBg: string; cardBorder: string; borderSoft: string; bgSoft: string;
     termBg: string; termBorder: string; mcHover: string; barBg: string; accentHex: string;
+    confettiColors: string[];
   }
 > = {
   default: {
@@ -140,33 +151,73 @@ const SUBJECT_STYLES: Record<
     badgeBg: 'bg-cyan-500/10', badgeBorder: 'border-cyan-500/50', cardBg: 'bg-cyan-500/5',
     cardBorder: 'border-cyan-500/20', borderSoft: 'border-cyan-500/20', bgSoft: 'bg-cyan-500/5',
     termBg: 'bg-cyan-500/10', termBorder: 'border-cyan-500/20', mcHover: 'hover:border-cyan-500/50',
-    barBg: 'bg-cyan-500', accentHex: '#22d3ee',
+    barBg: 'bg-cyan-500', accentHex: '#22d3ee', confettiColors: ['#22d3ee', '#06b6d4', '#0891b2'],
   },
   calculus: {
     accent: 'text-cyan-400', pulse: 'bg-cyan-500', badgeText: 'text-cyan-400',
     badgeBg: 'bg-cyan-500/10', badgeBorder: 'border-cyan-500/50', cardBg: 'bg-cyan-500/5',
     cardBorder: 'border-cyan-500/20', borderSoft: 'border-cyan-500/20', bgSoft: 'bg-cyan-500/5',
     termBg: 'bg-cyan-500/10', termBorder: 'border-cyan-500/20', mcHover: 'hover:border-cyan-500/50',
-    barBg: 'bg-cyan-500', accentHex: '#22d3ee',
+    barBg: 'bg-cyan-500', accentHex: '#22d3ee', confettiColors: ['#22d3ee', '#06b6d4', '#67e8f9'],
   },
   biology: {
     accent: 'text-emerald-400', pulse: 'bg-emerald-500', badgeText: 'text-emerald-400',
     badgeBg: 'bg-emerald-500/10', badgeBorder: 'border-emerald-500/50', cardBg: 'bg-emerald-500/5',
     cardBorder: 'border-emerald-500/20', borderSoft: 'border-emerald-500/20', bgSoft: 'bg-emerald-500/5',
     termBg: 'bg-emerald-500/10', termBorder: 'border-emerald-500/20', mcHover: 'hover:border-emerald-500/50',
-    barBg: 'bg-emerald-500', accentHex: '#34d399',
+    barBg: 'bg-emerald-500', accentHex: '#34d399', confettiColors: ['#34d399', '#10b981', '#6ee7b7'],
   },
   'computer-science': {
     accent: 'text-violet-400', pulse: 'bg-violet-500', badgeText: 'text-violet-400',
     badgeBg: 'bg-violet-500/10', badgeBorder: 'border-violet-500/50', cardBg: 'bg-violet-500/5',
     cardBorder: 'border-violet-500/20', borderSoft: 'border-violet-500/20', bgSoft: 'bg-violet-500/5',
     termBg: 'bg-violet-500/10', termBorder: 'border-violet-500/20', mcHover: 'hover:border-violet-500/50',
-    barBg: 'bg-violet-500', accentHex: '#a78bfa',
+    barBg: 'bg-violet-500', accentHex: '#a78bfa', confettiColors: ['#a78bfa', '#7c3aed', '#c4b5fd'],
   },
 };
 
 function getStyles(subject: Subject | null) {
   return subject ? SUBJECT_STYLES[subject] : SUBJECT_STYLES.default;
+}
+
+function getFloatingColor(subject: Subject | null, view: GameState['view']): 'cyan' | 'green' | 'yellow' | 'red' | 'purple' | 'orange' {
+  if (view === 'conclusion') return 'yellow';
+  if (view === 'difficulty-select') return 'orange';
+  if (view === 'question-count') return 'purple';
+  if (!subject) return 'cyan';
+  const cfg = SUBJECT_CONFIG.find(c => c.subject === subject);
+  return cfg?.floatingColor ?? 'cyan';
+}
+
+function getDetectiveScheme(subject: Subject | null, view: GameState['view']): 'cyan' | 'green' | 'yellow' | 'red' | 'purple' | 'orange' {
+  if (view === 'conclusion') return 'yellow';
+  if (view === 'difficulty-select') return 'orange';
+  if (view === 'question-count') return 'purple';
+  if (!subject) return 'cyan';
+  const cfg = SUBJECT_CONFIG.find(c => c.subject === subject);
+  return cfg?.floatingColor ?? 'cyan';
+}
+
+// ─────────────────────────────────────────────────────────
+// Investigation narrative (procedural story text)
+// ─────────────────────────────────────────────────────────
+function getInvestigationNarrative(caseIndex: number, total: number, isCorrect: boolean, score: number): string {
+  const remaining = total - caseIndex - 1;
+  const sessionAccuracy = Math.round(((isCorrect ? score : score) / (caseIndex + 1)) * 100);
+
+  if (isCorrect) {
+    if (total === 1) return 'Single-case operation complete. Evidence secured and filed with the department. Outstanding work, detective.';
+    if (remaining === 0) return `All ${total} evidence files confirmed and filed. The prosecutor has an airtight case. The department commends your precision.`;
+    if (remaining === 1) return `Case ${caseIndex + 1} of ${total} resolved. One final lead remains — stay sharp. The suspect is cornered.`;
+    if (caseIndex === 0) return `First breakthrough logged. ${remaining} more leads to pursue before the case is airtight. You're off to a strong start.`;
+    if (sessionAccuracy === 100) return `Flawless record — ${caseIndex + 1} for ${caseIndex + 1}. ${remaining} cases remain. The department is taking notice.`;
+    return `Evidence ${caseIndex + 1} of ${total} confirmed. Session accuracy: ${sessionAccuracy}%. The trail grows clearer — ${remaining} more suspect${remaining !== 1 ? 's' : ''} to pursue.`;
+  } else {
+    if (remaining === 0) return 'The final case went cold. Review the evidence carefully and return sharper next time. The city still needs you.';
+    if (caseIndex === 0) return `Rough start — but the investigation is far from over. ${remaining} more leads remain. Regroup and stay focused.`;
+    if (sessionAccuracy < 50) return `Session accuracy at ${sessionAccuracy}%. The department is watching closely. ${remaining} leads left to turn this around.`;
+    return `Setback on case ${caseIndex + 1}. ${remaining} lead${remaining !== 1 ? 's' : ''} remain — the case is still winnable. Don't let the suspect walk.`;
+  }
 }
 
 // ─────────────────────────────────────────────────────────
@@ -204,7 +255,7 @@ function ExitModal({ onResume, onExit }: { onResume: () => void; onExit: () => v
                 </div>
               </div>
               <button
-                onClick={onResume}
+                onClick={() => { playPop(); onResume(); }}
                 className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center text-slate-400 hover:text-white transition-all"
               >
                 <X className="w-4 h-4" />
@@ -218,13 +269,13 @@ function ExitModal({ onResume, onExit }: { onResume: () => void; onExit: () => v
 
             <div className="space-y-3">
               <button
-                onClick={onResume}
+                onClick={() => { playPop(); onResume(); }}
                 className="w-full py-3.5 rounded-2xl bg-white/8 hover:bg-white/15 border border-white/10 hover:border-white/20 text-white font-bold tracking-wide transition-all text-sm uppercase"
               >
                 Resume Investigation
               </button>
               <button
-                onClick={onExit}
+                onClick={() => { playPop(); onExit(); }}
                 className="w-full py-3.5 rounded-2xl bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 hover:border-red-500/50 text-red-300 font-bold tracking-wide transition-all text-sm uppercase"
               >
                 Exit to Subject Select
@@ -242,7 +293,7 @@ function ExitModal({ onResume, onExit }: { onResume: () => void; onExit: () => v
 }
 
 // ─────────────────────────────────────────────────────────
-// Score ring (SVG circle progress) for conclusion
+// Score ring
 // ─────────────────────────────────────────────────────────
 function ScoreRing({ pct, accentHex }: { pct: number; accentHex: string }) {
   const r = 45;
@@ -277,6 +328,7 @@ function ScoreRing({ pct, accentHex }: { pct: number; accentHex: string }) {
 const INITIAL_STATE: GameState = {
   subject: null,
   difficulty: null,
+  questionLimit: null,
   userTopic: null,
   activeCases: [],
   currentCaseIndex: 0,
@@ -314,6 +366,7 @@ export default function App() {
       if (gameState.view === 'investigation' && currentCase) {
         if (e.key === 'Enter' && gameState.isCorrect !== null) {
           e.preventDefault();
+          playPop();
           if (gameState.currentCaseIndex < activeCases.length - 1) {
             setGameState(prev => ({
               ...prev,
@@ -331,8 +384,10 @@ export default function App() {
           const idx = parseInt(e.key) - 1;
           if (idx >= 0 && idx < currentCase.problem.options.length) {
             e.preventDefault();
+            playPop();
             const option = currentCase.problem.options[idx];
             const isCorrect = option === currentCase.problem.correctAnswer;
+            if (isCorrect) fireConfetti(S.confettiColors);
             setGameState(prev => ({
               ...prev,
               selectedOption: option,
@@ -346,10 +401,21 @@ export default function App() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [gameState, currentCase, showExitModal, activeCases]);
+  }, [gameState, currentCase, showExitModal, activeCases, S.confettiColors]);
+
+  // ── Confetti ────────────────────────────────────────────
+  function fireConfetti(colors: string[]) {
+    const opts = { colors, disableForReducedMotion: false, ticks: 220, gravity: 0.75 };
+    void confetti({ ...opts, particleCount: 110, spread: 80, origin: { y: 0.65 } });
+    setTimeout(() => {
+      void confetti({ ...opts, particleCount: 55, angle: 55, spread: 60, origin: { x: 0, y: 0.7 } });
+      void confetti({ ...opts, particleCount: 55, angle: 125, spread: 60, origin: { x: 1, y: 0.7 } });
+    }, 140);
+  }
 
   // ── Navigation handlers ─────────────────────────────────
   const goToSubjectSelect = () => {
+    playPop();
     setTopicInput('');
     setGeminiStatus(null);
     setShowExitModal(false);
@@ -357,19 +423,27 @@ export default function App() {
   };
 
   const selectSubject = (subject: Subject) => {
+    playPop();
     setTopicInput('');
     setGameState({ ...INITIAL_STATE, subject, view: 'difficulty-select' });
   };
 
   const selectDifficulty = (difficulty: Difficulty) => {
-    setGameState(prev => ({ ...prev, difficulty, view: 'topic-input' }));
+    playPop();
+    setGameState(prev => ({ ...prev, difficulty, view: 'question-count' }));
+  };
+
+  const selectQuestionLimit = (limit: QuestionLimit) => {
+    playPop();
+    setGameState(prev => ({ ...prev, questionLimit: limit, view: 'topic-input' }));
   };
 
   const handleTopicSkip = () => {
+    playPop();
     if (!gameState.subject) return;
     const diff = gameState.difficulty ?? 'medium';
     setGeminiStatus(null);
-    const cases = buildActiveCases(gameState.subject, diff);
+    const cases = buildActiveCases(gameState.subject, diff, gameState.questionLimit);
     setGameState(prev => ({
       ...prev, userTopic: null, activeCases: cases, currentCaseIndex: 0, score: 0,
       isGameOver: false, view: 'investigation', selectedOption: null, isCorrect: null,
@@ -379,16 +453,18 @@ export default function App() {
 
   const selectTopic = async (topic: string) => {
     if (!gameState.subject || !topic.trim()) return;
+    playPop();
     const subject = gameState.subject;
     const diff = gameState.difficulty ?? 'medium';
     const trimmed = topic.trim();
+    const geminiCount = gameState.questionLimit ?? 4;
     setGeminiStatus(null);
     setGameState(prev => ({ ...prev, view: 'loading', userTopic: trimmed }));
 
     let geminiCases: ActiveCase[] | null = null;
     if (isGeminiAvailable()) {
       try {
-        geminiCases = await generateTopicCases(subject, trimmed, diff);
+        geminiCases = await generateTopicCases(subject, trimmed, diff, geminiCount);
       } catch { geminiCases = null; }
     }
 
@@ -401,7 +477,7 @@ export default function App() {
       }));
     } else {
       setGeminiStatus('fallback');
-      const cases = buildActiveCases(subject, diff);
+      const cases = buildActiveCases(subject, diff, gameState.questionLimit);
       setGameState(prev => ({
         ...prev, activeCases: cases, currentCaseIndex: 0, score: 0,
         isGameOver: false, view: 'investigation', selectedOption: null, isCorrect: null,
@@ -411,21 +487,24 @@ export default function App() {
   };
 
   const tryHarderDifficulty = () => {
+    playPop();
     if (!gameState.subject) return;
     const nextDiff: Difficulty = gameState.difficulty === 'easy' ? 'medium' : 'hard';
-    const cases = buildActiveCases(gameState.subject, nextDiff);
+    const cases = buildActiveCases(gameState.subject, nextDiff, gameState.questionLimit);
     setGeminiStatus(null);
     setTopicInput('');
     setGameState(prev => ({
-      ...INITIAL_STATE, subject: prev.subject, difficulty: nextDiff, activeCases: cases,
-      currentCaseIndex: 0, score: 0, isGameOver: false, view: 'investigation',
+      ...INITIAL_STATE, subject: prev.subject, difficulty: nextDiff, questionLimit: prev.questionLimit,
+      activeCases: cases, currentCaseIndex: 0, score: 0, isGameOver: false, view: 'investigation',
       selectedOption: null, isCorrect: null, codeInput: '', caseResults: [],
     }));
   };
 
   const handleOptionSelect = (option: string) => {
     if (gameState.isCorrect !== null || !currentCase) return;
+    playPop();
     const isCorrect = option === currentCase.problem.correctAnswer;
+    if (isCorrect) fireConfetti(S.confettiColors);
     setGameState(prev => ({
       ...prev, selectedOption: option, isCorrect,
       score: isCorrect ? prev.score + 1 : prev.score,
@@ -437,8 +516,10 @@ export default function App() {
     if (gameState.isCorrect !== null || !currentCase) return;
     const input = gameState.codeInput.trim();
     if (!input) return;
+    playPop();
     const normalise = (s: string) => s.toLowerCase().replace(/\s+/g, '');
     const isCorrect = normalise(input) === normalise(currentCase.problem.correctAnswer);
+    if (isCorrect) fireConfetti(S.confettiColors);
     setGameState(prev => ({
       ...prev, selectedOption: input, isCorrect,
       score: isCorrect ? prev.score + 1 : prev.score,
@@ -447,6 +528,7 @@ export default function App() {
   };
 
   const nextStep = () => {
+    playPop();
     if (gameState.currentCaseIndex < activeCases.length - 1) {
       setGameState(prev => ({
         ...prev, currentCaseIndex: prev.currentCaseIndex + 1,
@@ -459,42 +541,57 @@ export default function App() {
 
   const answeredCount = gameState.caseResults.length;
   const accuracyPct = answeredCount > 0 ? ((gameState.score / answeredCount) * 100).toFixed(1) : '—';
-  const resetGame = () => setGameState(INITIAL_STATE);
+  const resetGame = () => { playPop(); setGameState(INITIAL_STATE); };
+
+  const detectiveScheme = getDetectiveScheme(gameState.subject, gameState.view);
+  const floatingColor = getFloatingColor(gameState.subject, gameState.view);
+  const detectiveSearching = gameState.view !== 'conclusion' && gameState.view !== 'topic-input' && gameState.view !== 'question-count';
+  const detectivePosition: 'left' | 'right' | 'center' =
+    gameState.view === 'start' ? 'center' :
+    gameState.view === 'subject-select' ? 'left' :
+    gameState.view === 'difficulty-select' ? 'right' :
+    gameState.view === 'question-count' ? 'left' :
+    gameState.view === 'topic-input' ? 'right' :
+    gameState.view === 'loading' ? 'center' :
+    gameState.view === 'investigation' ? (gameState.currentCaseIndex % 2 === 0 ? 'left' : 'right') :
+    'center';
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans relative overflow-x-hidden selection:bg-cyan-500/30 cursor-none">
 
+      {/* ── Floating shapes (Figma Make) ─────────────────── */}
+      <FloatingShapes colorScheme={floatingColor} />
+
       {/* ── Background ───────────────────────────────────── */}
       <div className="fixed inset-0 pointer-events-none">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_65%_15%,_#0f172a_0%,_#020617_100%)]" />
-        {/* Dot grid */}
         <div
-          className="absolute inset-0 opacity-40"
+          className="absolute inset-0 opacity-30"
           style={{
-            backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.12) 1px, transparent 1px)',
+            backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.10) 1px, transparent 1px)',
             backgroundSize: '32px 32px',
           }}
         />
         <DetectiveSilhouette />
-        {/* Ambient blobs */}
         <motion.div
-          animate={{ scale: [1, 1.25, 1], opacity: [0.12, 0.2, 0.12], x: [0, 60, 0], y: [0, -40, 0] }}
+          animate={{ scale: [1, 1.25, 1], opacity: [0.10, 0.18, 0.10], x: [0, 60, 0], y: [0, -40, 0] }}
           transition={{ duration: 16, repeat: Infinity, ease: 'linear' }}
-          className="absolute top-[-15%] right-[-10%] w-[700px] h-[700px] bg-cyan-500/25 rounded-full blur-[140px]"
+          className="absolute top-[-15%] right-[-10%] w-[700px] h-[700px] bg-cyan-500/20 rounded-full blur-[140px]"
         />
         <motion.div
-          animate={{ scale: [1, 1.3, 1], opacity: [0.1, 0.15, 0.1], x: [0, -50, 0], y: [0, 50, 0] }}
+          animate={{ scale: [1, 1.3, 1], opacity: [0.08, 0.13, 0.08], x: [0, -50, 0], y: [0, 50, 0] }}
           transition={{ duration: 22, repeat: Infinity, ease: 'linear' }}
-          className="absolute bottom-[-15%] left-[-10%] w-[700px] h-[700px] bg-violet-500/20 rounded-full blur-[140px]"
+          className="absolute bottom-[-15%] left-[-10%] w-[700px] h-[700px] bg-violet-500/15 rounded-full blur-[140px]"
         />
-        <motion.div
-          animate={{ scale: [1, 1.15, 1], opacity: [0.05, 0.1, 0.05] }}
-          transition={{ duration: 12, repeat: Infinity, ease: 'linear' }}
-          className="absolute top-[40%] left-[40%] w-[400px] h-[400px] bg-emerald-500/10 rounded-full blur-[100px]"
-        />
-        {/* Scanlines */}
-        <div className="absolute inset-0 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.15)_50%)] z-[100] bg-[length:100%_2px] pointer-events-none opacity-15" />
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.15)_50%)] z-[100] bg-[length:100%_2px] pointer-events-none opacity-10" />
       </div>
+
+      {/* ── Detective character ───────────────────────────── */}
+      <Detective
+        position={detectivePosition}
+        searching={detectiveSearching}
+        colorScheme={detectiveScheme}
+      />
 
       {/* ── Exit Modal ───────────────────────────────────── */}
       <AnimatePresence>
@@ -512,7 +609,6 @@ export default function App() {
             animate={{ y: 0, opacity: 1 }}
             className="flex justify-between items-center mb-7 gap-4"
           >
-            {/* Logo + title */}
             <div className="flex items-center gap-4 min-w-0">
               <div className={cn(
                 'w-10 h-10 rounded-xl flex items-center justify-center shrink-0',
@@ -522,23 +618,26 @@ export default function App() {
               </div>
               <div className="min-w-0">
                 <h1 className="text-lg font-black tracking-tight text-white uppercase leading-none">
-                  {subjectMeta?.title} Detective
+                  {subjectMeta?.title} STEM-tective
                 </h1>
                 <p className={cn('text-[9px] font-mono tracking-[0.18em] uppercase opacity-60 mt-0.5', S.accent)}>
                   Intel Division · {subjectMeta?.title}
                   {gameState.difficulty && (
                     <span className="ml-2 opacity-80">· {gameState.difficulty.toUpperCase()}</span>
                   )}
+                  {gameState.questionLimit !== null
+                    ? <span className="ml-2 opacity-80">· {gameState.questionLimit} CASES</span>
+                    : <span className="ml-2 opacity-80">· {activeCases.length} CASES</span>
+                  }
                 </p>
               </div>
             </div>
 
-            {/* Right: progress + accuracy + exit */}
             <div className="flex items-center gap-5 shrink-0">
               {/* Progress dots */}
               <div className="hidden sm:flex flex-col items-end gap-1.5">
                 <p className="text-[9px] text-slate-500 uppercase tracking-widest font-bold">Progress</p>
-                <div className="flex gap-1.5">
+                <div className="flex gap-1.5 flex-wrap max-w-[200px] justify-end">
                   {activeCases.map((_, i) => {
                     const result = gameState.caseResults[i];
                     return (
@@ -568,12 +667,11 @@ export default function App() {
                 </p>
               </div>
 
-              {/* Exit button — only during investigation */}
               {gameState.view === 'investigation' && (
                 <motion.button
                   whileHover={{ scale: 1.04 }}
                   whileTap={{ scale: 0.96 }}
-                  onClick={() => setShowExitModal(true)}
+                  onClick={() => { playPop(); setShowExitModal(true); }}
                   className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-red-500/25 bg-red-500/10 hover:bg-red-500/20 hover:border-red-500/45 text-red-400 text-xs font-bold uppercase tracking-widest transition-all group"
                 >
                   <LogOut className="w-3.5 h-3.5 group-hover:-translate-x-0.5 transition-transform" />
@@ -597,7 +695,6 @@ export default function App() {
               exit={{ opacity: 0, y: -24 }}
               className="flex-1 flex flex-col items-center justify-center text-center space-y-10"
             >
-              {/* Logo badge */}
               <div className="relative">
                 <motion.div
                   animate={{ scale: [1, 1.04, 1] }}
@@ -605,13 +702,15 @@ export default function App() {
                 >
                   <div className="p-px rounded-[28px] bg-gradient-to-br from-cyan-500/50 via-cyan-500/15 to-transparent">
                     <div className="w-36 h-36 rounded-[27px] bg-slate-950 flex items-center justify-center">
-                      <div className="w-20 h-20 bg-cyan-500 rounded-2xl flex items-center justify-center shadow-[0_0_40px_rgba(6,182,212,0.6)]">
-                        <Target className="w-12 h-12 text-slate-950" />
+                      <div className="w-20 h-20 bg-cyan-500 rounded-2xl flex items-center justify-center shadow-[0_0_40px_rgba(6,182,212,0.6)] relative">
+                        <GraduationCap className="w-11 h-11 text-slate-950" />
+                        <div className="absolute bottom-1.5 right-1.5 w-5 h-5 bg-slate-950/30 rounded-full flex items-center justify-center">
+                          <Target className="w-3 h-3 text-slate-950/70" />
+                        </div>
                       </div>
                     </div>
                   </div>
                 </motion.div>
-                {/* Status badge */}
                 <motion.div
                   animate={{ opacity: [0.7, 1, 0.7] }}
                   transition={{ duration: 2, repeat: Infinity }}
@@ -622,25 +721,23 @@ export default function App() {
                 </motion.div>
               </div>
 
-              {/* Hero text */}
               <div className="space-y-5">
                 <h1 className="text-5xl md:text-7xl font-black tracking-tighter text-white uppercase italic leading-none">
-                  Science{' '}
+                  STEM-{' '}
                   <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-cyan-300">
-                    Detective
+                    tective
                   </span>
                 </h1>
-                <p className="text-slate-400 max-w-md mx-auto leading-relaxed text-base">
+                <p className="text-slate-400 max-w-md mx-auto leading-relaxed text-lg">
                   Deploy mathematical and scientific intelligence to intercept suspects and analyse crime scenes.
                   Choose your field of expertise and crack the case.
                 </p>
               </div>
 
-              {/* CTA */}
               <motion.button
                 whileHover={{ scale: 1.03 }}
                 whileTap={{ scale: 0.97 }}
-                onClick={goToSubjectSelect}
+                onClick={() => { playPop(); goToSubjectSelect(); }}
                 className="relative group bg-cyan-500 text-slate-950 px-10 py-4 rounded-2xl font-black uppercase tracking-widest text-sm flex items-center gap-3 shadow-[0_0_40px_rgba(6,182,212,0.4)] hover:shadow-[0_0_60px_rgba(6,182,212,0.6)] transition-all"
               >
                 <Play className="w-5 h-5 fill-current" />
@@ -648,7 +745,6 @@ export default function App() {
                 <div className="absolute inset-0 rounded-2xl bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity" />
               </motion.button>
 
-              {/* Feature pills */}
               <div className="flex flex-wrap justify-center gap-3 pt-4">
                 {[
                   { icon: <BookOpen className="w-4 h-4" />, label: '3 Subjects', sub: 'Calculus · Biology · CS' },
@@ -658,8 +754,8 @@ export default function App() {
                   <div key={label} className="flex items-center gap-3 px-4 py-2.5 rounded-2xl bg-white/4 border border-white/8 backdrop-blur-md">
                     <span className="text-slate-400">{icon}</span>
                     <div className="text-left">
-                      <p className="text-white text-xs font-bold leading-none">{label}</p>
-                      <p className="text-slate-500 text-[10px] font-mono mt-0.5">{sub}</p>
+                      <p className="text-white text-sm font-bold leading-none">{label}</p>
+                      <p className="text-slate-500 text-xs font-mono mt-0.5">{sub}</p>
                     </div>
                   </div>
                 ))}
@@ -689,8 +785,8 @@ export default function App() {
                     Field
                   </span>
                 </h2>
-                <p className="text-slate-400 max-w-sm mx-auto text-sm">
-                  Each subject presents 4 unique cases per session. No two investigations are alike.
+                <p className="text-slate-400 max-w-sm mx-auto text-base">
+                  Each subject presents unique investigation cases. No two sessions are alike.
                 </p>
               </div>
 
@@ -702,7 +798,6 @@ export default function App() {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: i * 0.1 }}
                     className="p-px rounded-3xl cursor-pointer"
-                    style={{ background: 'transparent' }}
                   >
                     <div className={cn('p-px rounded-3xl', cfg.gradientBorder, cfg.glow)}>
                       <motion.button
@@ -711,32 +806,26 @@ export default function App() {
                         onClick={() => selectSubject(cfg.subject)}
                         className="group w-full h-full rounded-[23px] bg-slate-950/95 p-7 flex flex-col items-start gap-5 text-left backdrop-blur-xl"
                       >
-                        {/* Level badge */}
                         <div className="self-end">
                           <span className={cn('px-2 py-0.5 rounded-md text-[9px] font-black border tracking-[0.2em] uppercase', cfg.badge, cfg.badgeBorder)}>
-                            4 LEVELS
+                            ACTIVE
                           </span>
                         </div>
-
-                        {/* Icon */}
                         <div className={cn(
                           'w-14 h-14 rounded-2xl flex items-center justify-center border transition-all',
-                          `bg-[${cfg.accentHex}]/10`,
                           cfg.badgeBorder, cfg.accent,
                         )}
                           style={{ background: `${cfg.accentHex}18` }}
                         >
                           {cfg.icon}
                         </div>
-
                         <div className="space-y-2 flex-1">
-                          <h3 className={cn('text-xl font-black uppercase tracking-tight', cfg.accent)}>
+                          <h3 className={cn('text-2xl font-black uppercase tracking-tight', cfg.accent)}>
                             {cfg.label}
                           </h3>
-                          <p className="text-slate-500 text-sm leading-relaxed">{cfg.tagline}</p>
+                          <p className="text-slate-500 text-base leading-relaxed">{cfg.tagline}</p>
                         </div>
-
-                        <div className={cn('flex items-center gap-2 text-xs font-black uppercase tracking-widest', cfg.accent)}>
+                        <div className={cn('flex items-center gap-2 text-sm font-black uppercase tracking-widest', cfg.accent)}>
                           Start Investigation
                           <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                         </div>
@@ -748,7 +837,7 @@ export default function App() {
 
               <button
                 onClick={resetGame}
-                className="text-slate-600 hover:text-slate-300 text-xs uppercase tracking-widest font-bold flex items-center gap-2 transition-colors"
+                className="text-slate-600 hover:text-slate-300 text-sm uppercase tracking-widest font-bold flex items-center gap-2 transition-colors"
               >
                 <RotateCcw className="w-3 h-3" /> Back to Start
               </button>
@@ -816,8 +905,8 @@ export default function App() {
                       Difficulty
                     </span>
                   </h2>
-                  <p className="text-slate-400 max-w-sm mx-auto text-sm">
-                    Pick a challenge level that matches your current knowledge. You can always try harder at the end.
+                  <p className="text-slate-400 max-w-sm mx-auto text-base">
+                    Pick a challenge level that matches your current knowledge.
                   </p>
                 </div>
 
@@ -838,10 +927,10 @@ export default function App() {
                         >
                           <div className="text-4xl">{d.icon}</div>
                           <div className="space-y-2 flex-1">
-                            <h3 className={cn('text-xl font-black uppercase tracking-tight', d.accent)}>{d.label}</h3>
-                            <p className="text-slate-500 text-xs leading-relaxed">{d.tagline}</p>
+                            <h3 className={cn('text-2xl font-black uppercase tracking-tight', d.accent)}>{d.label}</h3>
+                            <p className="text-slate-500 text-sm leading-relaxed">{d.tagline}</p>
                           </div>
-                          <div className={cn('flex items-center gap-2 text-xs font-black uppercase tracking-widest', d.accent)}>
+                          <div className={cn('flex items-center gap-2 text-sm font-black uppercase tracking-widest', d.accent)}>
                             Select
                             <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
                           </div>
@@ -853,9 +942,138 @@ export default function App() {
 
                 <button
                   onClick={goToSubjectSelect}
-                  className="text-slate-600 hover:text-slate-300 text-xs uppercase tracking-widest font-bold flex items-center gap-2 transition-colors"
+                  className="text-slate-600 hover:text-slate-300 text-sm uppercase tracking-widest font-bold flex items-center gap-2 transition-colors"
                 >
                   <RotateCcw className="w-3 h-3" /> Back to Subject Select
+                </button>
+              </motion.div>
+            );
+          })()}
+
+          {/* ═══════════════════════════════════════════════
+              QUESTION COUNT SELECT
+          ═══════════════════════════════════════════════ */}
+          {gameState.view === 'question-count' && gameState.subject && (() => {
+            const cfg = SUBJECT_CONFIG.find(c => c.subject === gameState.subject)!;
+            const counts: {
+              limit: QuestionLimit;
+              label: string;
+              sub: string;
+              description: string;
+              icon: React.ReactNode;
+              gradientBorder: string;
+              glow: string;
+              accent: string;
+              badge: string;
+              badgeBorder: string;
+            }[] = [
+              {
+                limit: 5,
+                label: '5 Cases',
+                sub: 'Quick Strike',
+                description: 'A focused burst of 5 targeted cases. Fast, sharp, efficient.',
+                icon: <FileText className="w-7 h-7" />,
+                gradientBorder: 'bg-gradient-to-br from-sky-500/40 via-sky-500/10 to-transparent',
+                glow: 'shadow-[0_0_40px_rgba(14,165,233,0.12)]',
+                accent: 'text-sky-400',
+                badge: 'bg-sky-500/15 text-sky-300',
+                badgeBorder: 'border-sky-500/30',
+              },
+              {
+                limit: 10,
+                label: '10 Cases',
+                sub: 'Full Operation',
+                description: 'A comprehensive 10-case deep dive. The full detective experience.',
+                icon: <Layers className="w-7 h-7" />,
+                gradientBorder: 'bg-gradient-to-br from-violet-500/40 via-violet-500/10 to-transparent',
+                glow: 'shadow-[0_0_40px_rgba(139,92,246,0.12)]',
+                accent: 'text-violet-400',
+                badge: 'bg-violet-500/15 text-violet-300',
+                badgeBorder: 'border-violet-500/30',
+              },
+              {
+                limit: null,
+                label: 'Unlimited',
+                sub: 'Marathon Session',
+                description: 'Every available case in the dossier. No shortcuts, no mercy.',
+                icon: <InfinityIcon className="w-7 h-7" />,
+                gradientBorder: 'bg-gradient-to-br from-amber-500/40 via-amber-500/10 to-transparent',
+                glow: 'shadow-[0_0_40px_rgba(245,158,11,0.12)]',
+                accent: 'text-amber-400',
+                badge: 'bg-amber-500/15 text-amber-300',
+                badgeBorder: 'border-amber-500/30',
+              },
+            ];
+
+            return (
+              <motion.div
+                key="question-count"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                className="flex-1 flex flex-col items-center justify-center space-y-10"
+              >
+                <div className="text-center space-y-4">
+                  <div className={cn(
+                    'inline-flex items-center gap-2 px-4 py-1.5 rounded-full border text-[10px] font-black tracking-[0.25em] uppercase',
+                    cfg.badge, cfg.badgeBorder,
+                  )}>
+                    {cfg.label} · {gameState.difficulty?.toUpperCase()}
+                  </div>
+                  <h2 className="text-4xl md:text-6xl font-black text-white italic uppercase tracking-tighter leading-none">
+                    Case{' '}
+                    <span className="text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-purple-300">
+                      Load
+                    </span>
+                  </h2>
+                  <p className="text-slate-400 max-w-sm mx-auto text-base">
+                    How many cases do you want in this session? Each case presents one evidence-based problem.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-5 w-full max-w-3xl">
+                  {counts.map((c, i) => (
+                    <motion.div
+                      key={String(c.limit)}
+                      initial={{ opacity: 0, y: 30 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: i * 0.1 }}
+                    >
+                      <div className={cn('p-px rounded-3xl', c.gradientBorder, c.glow)}>
+                        <motion.button
+                          whileHover={{ scale: 1.01 }}
+                          whileTap={{ scale: 0.98 }}
+                          onClick={() => selectQuestionLimit(c.limit)}
+                          className="group w-full rounded-[23px] bg-slate-950/95 p-7 flex flex-col items-start gap-5 text-left backdrop-blur-xl"
+                        >
+                          <div className={cn(
+                            'w-14 h-14 rounded-2xl flex items-center justify-center border transition-all',
+                            c.badgeBorder, c.accent,
+                          )}
+                            style={{ background: 'rgba(255,255,255,0.05)' }}
+                          >
+                            {c.icon}
+                          </div>
+                          <div className="space-y-1.5 flex-1">
+                            <h3 className={cn('text-2xl font-black uppercase tracking-tight', c.accent)}>{c.label}</h3>
+                            <p className={cn('text-xs font-black uppercase tracking-widest', c.badge.split(' ')[1])}>{c.sub}</p>
+                            <p className="text-slate-500 text-sm leading-relaxed mt-2">{c.description}</p>
+                          </div>
+                          <div className={cn('flex items-center gap-2 text-sm font-black uppercase tracking-widest', c.accent)}>
+                            Select
+                            <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+                          </div>
+                        </motion.button>
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
+
+                <button
+                  onClick={() => { playPop(); setGameState(prev => ({ ...prev, view: 'difficulty-select' })); }}
+                  className="text-slate-600 hover:text-slate-300 text-sm uppercase tracking-widest font-bold flex items-center gap-2 transition-colors"
+                >
+                  <RotateCcw className="w-3 h-3" /> Back to Difficulty Select
                 </button>
               </motion.div>
             );
@@ -879,22 +1097,20 @@ export default function App() {
                     'inline-flex items-center gap-2 px-4 py-1.5 rounded-full border text-[10px] font-black tracking-[0.25em] uppercase',
                     cfg.badge, cfg.badgeBorder,
                   )}>
-                    {cfg.label} Division
+                    {cfg.label} · {gameState.difficulty?.toUpperCase()} · {gameState.questionLimit ?? 'ALL'} CASES
                   </div>
                   <h2 className="text-4xl md:text-5xl font-black text-white italic uppercase tracking-tighter leading-none">
                     Specify Your{' '}
                     <span className={cfg.accent}>Focus</span>
                   </h2>
-                  <p className="text-slate-400 text-sm max-w-sm mx-auto">
-                    Type any topic and Gemini will build a full 4-case investigation around it. Or skip to use standard cases.
+                  <p className="text-slate-400 text-base max-w-sm mx-auto">
+                    Type any topic and Gemini will build a full investigation around it. Or skip to use standard cases.
                   </p>
                 </div>
 
                 <div className="w-full space-y-4">
-                  {/* Terminal input */}
                   <div className={cn('p-px rounded-2xl', cfg.gradientBorder)}>
                     <div className="rounded-[15px] bg-slate-950/95 overflow-hidden">
-                      {/* Terminal header bar */}
                       <div className="flex items-center gap-2 px-4 py-2.5 border-b border-white/5 bg-black/30">
                         <div className="w-2.5 h-2.5 rounded-full bg-red-500/60" />
                         <div className="w-2.5 h-2.5 rounded-full bg-yellow-500/60" />
@@ -918,14 +1134,13 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Suggestion chips */}
                   <div className="flex flex-wrap gap-2">
                     {TOPIC_SUGGESTIONS[gameState.subject].map(s => (
                       <button
                         key={s}
                         onClick={() => { setTopicInput(s); selectTopic(s); }}
                         className={cn(
-                          'px-3 py-1.5 rounded-xl text-xs font-bold border transition-all hover:opacity-80',
+                          'px-3 py-1.5 rounded-xl text-sm font-bold border transition-all hover:opacity-80',
                           cfg.badge, cfg.badgeBorder,
                         )}
                       >
@@ -942,7 +1157,7 @@ export default function App() {
                     onClick={() => topicInput.trim() && selectTopic(topicInput)}
                     disabled={!topicInput.trim()}
                     className={cn(
-                      'flex-1 flex items-center justify-center gap-2 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all border',
+                      'flex-1 flex items-center justify-center gap-2 py-4 rounded-2xl font-black text-sm uppercase tracking-widest transition-all border',
                       topicInput.trim()
                         ? cn(cfg.badge, cfg.badgeBorder, 'hover:opacity-90')
                         : 'bg-white/3 border-white/8 text-slate-600 cursor-not-allowed',
@@ -953,17 +1168,17 @@ export default function App() {
                   </motion.button>
                   <button
                     onClick={handleTopicSkip}
-                    className="px-6 py-4 rounded-2xl text-slate-500 hover:text-slate-300 text-xs uppercase tracking-widest font-bold border border-white/8 hover:border-white/20 transition-all"
+                    className="px-6 py-4 rounded-2xl text-slate-500 hover:text-slate-300 text-sm uppercase tracking-widest font-bold border border-white/8 hover:border-white/20 transition-all"
                   >
                     Use Standard Cases
                   </button>
                 </div>
 
                 <button
-                  onClick={() => setGameState(prev => ({ ...prev, view: 'difficulty-select' }))}
-                  className="text-slate-600 hover:text-slate-400 text-xs uppercase tracking-widest font-bold flex items-center gap-2 transition-colors"
+                  onClick={() => { playPop(); setGameState(prev => ({ ...prev, view: 'question-count' })); }}
+                  className="text-slate-600 hover:text-slate-400 text-sm uppercase tracking-widest font-bold flex items-center gap-2 transition-colors"
                 >
-                  <RotateCcw className="w-3 h-3" /> Back to Difficulty Select
+                  <RotateCcw className="w-3 h-3" /> Back to Case Load
                 </button>
               </motion.div>
             );
@@ -1002,7 +1217,9 @@ export default function App() {
                   Building Your Investigation
                 </h2>
                 <p className={cn('text-sm font-mono', S.accent)}>
-                  Generating 4 custom cases on{' '}
+                  Generating{' '}
+                  {gameState.questionLimit !== null ? `${gameState.questionLimit} ` : ''}
+                  custom cases on{' '}
                   <span className="font-bold">"{gameState.userTopic}"</span>…
                 </p>
                 <p className="text-[10px] text-slate-600 uppercase tracking-[0.3em] font-bold mt-4">
@@ -1053,7 +1270,7 @@ export default function App() {
                   className={cn('flex items-center gap-3 px-4 py-2.5 rounded-xl border text-xs font-mono', S.bgSoft, S.borderSoft, S.accent)}
                 >
                   <span className="font-black uppercase tracking-widest shrink-0">✦ AI Generated</span>
-                  <span className="opacity-50">4 custom cases on "{gameState.userTopic}" — powered by Gemini</span>
+                  <span className="opacity-50">{activeCases.length} custom cases on "{gameState.userTopic}" — powered by Gemini</span>
                 </motion.div>
               )}
 
@@ -1075,13 +1292,13 @@ export default function App() {
                             transition={{ delay: 0.25 }}
                             className="inline-block px-2.5 py-1 rounded-lg bg-red-500/15 text-red-400 text-[9px] font-black border border-red-500/25 uppercase tracking-wider mb-4"
                           >
-                            Case {currentCase.id}
+                            Case {gameState.currentCaseIndex + 1} of {activeCases.length}
                           </motion.span>
                           <motion.h2
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             transition={{ delay: 0.3 }}
-                            className="text-xl font-black text-white leading-tight uppercase mb-3 tracking-tight"
+                            className="text-2xl font-black text-white leading-tight uppercase mb-3 tracking-tight"
                           >
                             {currentCase.title}
                           </motion.h2>
@@ -1089,7 +1306,7 @@ export default function App() {
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             transition={{ delay: 0.4 }}
-                            className="text-slate-400 text-sm leading-relaxed italic"
+                            className="text-slate-400 text-base leading-relaxed italic"
                           >
                             "{currentCase.description}"
                           </motion.p>
@@ -1106,8 +1323,8 @@ export default function App() {
                               <MapPin className="w-3.5 h-3.5" />
                             </div>
                             <div className="min-w-0">
-                              <div className="text-[9px] text-slate-600 uppercase font-black tracking-wider">Coordinates</div>
-                              <div className="text-xs font-mono text-slate-300 truncate">{currentCase.location}</div>
+                              <div className="text-xs text-slate-600 uppercase font-black tracking-wider">Coordinates</div>
+                              <div className="text-sm font-mono text-slate-300 truncate">{currentCase.location}</div>
                             </div>
                           </div>
                           <div className="flex items-center gap-3 p-3 bg-slate-900/60 rounded-xl border border-white/5">
@@ -1115,8 +1332,8 @@ export default function App() {
                               <Brain className="w-3.5 h-3.5" />
                             </div>
                             <div className="min-w-0">
-                              <div className="text-[9px] text-slate-600 uppercase font-black tracking-wider">Analysis Mode</div>
-                              <div className="text-xs font-mono text-slate-300 truncate">{currentCase.problem.topic}</div>
+                              <div className="text-xs text-slate-600 uppercase font-black tracking-wider">Analysis Mode</div>
+                              <div className="text-sm font-mono text-slate-300 truncate">{currentCase.problem.topic}</div>
                             </div>
                           </div>
                         </motion.div>
@@ -1129,10 +1346,10 @@ export default function App() {
                           className={cn('mt-auto p-4 rounded-2xl border', S.borderSoft, S.bgSoft)}
                         >
                           <div className={cn('flex items-center gap-1.5 mb-2', S.accent)}>
-                            <span className="text-[8px] font-black uppercase tracking-[0.2em]">AI Partner</span>
-                            <span className="text-[8px] font-mono opacity-50">✦ live</span>
+                            <span className="text-xs font-black uppercase tracking-[0.2em]">AI Partner</span>
+                            <span className="text-xs font-mono opacity-50">✦ live</span>
                           </div>
-                          <p className="text-xs text-slate-400 leading-relaxed italic">
+                          <p className="text-sm text-slate-400 leading-relaxed italic">
                             "{currentCase.hint ?? `Analyze the ${currentCase.evidenceType} carefully. Your knowledge of ${currentCase.problem.topic} is the key.`}"
                           </p>
                         </motion.div>
@@ -1149,9 +1366,8 @@ export default function App() {
                     transition={{ delay: 0.15 }}
                     className="flex-1 bg-slate-900/60 backdrop-blur-xl border border-white/8 rounded-3xl p-7 flex flex-col min-h-[460px]"
                   >
-                    {/* Workspace header */}
                     <div className="flex items-center justify-between mb-7">
-                      <h3 className="text-sm font-black text-white uppercase tracking-widest flex items-center gap-3">
+                      <h3 className="text-base font-black text-white uppercase tracking-widest flex items-center gap-3">
                         <div className={cn('w-2 h-2 rounded-full animate-pulse shadow-[0_0_8px]', S.pulse)} />
                         Forensic Workspace
                       </h3>
@@ -1221,7 +1437,6 @@ export default function App() {
                     {/* Answer input area */}
                     <div className="flex-1">
                       {currentCase.problem.type === 'code-fill' ? (
-                        /* Code fill */
                         <motion.div
                           initial={{ opacity: 0 }}
                           animate={{ opacity: 1 }}
@@ -1293,7 +1508,6 @@ export default function App() {
                           </div>
                         </motion.div>
                       ) : (
-                        /* Multiple choice — with keyboard hints */
                         <motion.div
                           initial={{ opacity: 0 }}
                           animate={{ opacity: 1 }}
@@ -1324,7 +1538,6 @@ export default function App() {
                                 )}
                               >
                                 <div className="flex items-center justify-between gap-3 relative z-10">
-                                  {/* Keyboard hint */}
                                   <span className={cn(
                                     'flex-shrink-0 w-5 h-5 rounded-md text-[9px] font-black flex items-center justify-center border transition-colors',
                                     isSelected
@@ -1358,7 +1571,6 @@ export default function App() {
                       )}
                     </div>
 
-                    {/* Keyboard hints bar (only when unanswered + MC) */}
                     {gameState.isCorrect === null && currentCase.problem.type !== 'code-fill' && (
                       <motion.p
                         initial={{ opacity: 0 }}
@@ -1379,7 +1591,7 @@ export default function App() {
                       </motion.p>
                     )}
 
-                    {/* Feedback panel */}
+                    {/* ── Enhanced Feedback Panel ── */}
                     <AnimatePresence>
                       {gameState.isCorrect !== null && (
                         <motion.div
@@ -1393,36 +1605,65 @@ export default function App() {
                               : 'bg-red-500/8 border-red-500/30',
                           )}
                         >
-                          <div className="p-5 flex flex-col gap-5">
+                          <div className="p-5 space-y-5">
+                            {/* Result header */}
+                            <div className={cn(
+                              'font-black text-sm uppercase tracking-[0.2em] flex items-center gap-2',
+                              gameState.isCorrect ? 'text-green-400' : 'text-red-400',
+                            )}>
+                              {gameState.isCorrect
+                                ? <CheckCircle2 className="w-4 h-4 shrink-0" />
+                                : <XCircle className="w-4 h-4 shrink-0" />}
+                              {gameState.isCorrect ? 'Evidence Secured' : 'Case Compromised'}
+                            </div>
+
                             <div className="flex flex-col sm:flex-row gap-5">
-                              {/* Result + explanation */}
-                              <div className="flex-1 min-w-0">
-                                <div className={cn(
-                                  'font-black text-xs uppercase tracking-[0.2em] flex items-center gap-2 mb-3',
-                                  gameState.isCorrect ? 'text-green-400' : 'text-red-400',
-                                )}>
-                                  {gameState.isCorrect
-                                    ? <CheckCircle2 className="w-4 h-4 shrink-0" />
-                                    : <XCircle className="w-4 h-4 shrink-0" />}
-                                  {gameState.isCorrect ? 'Mission Success' : 'Mission Critical Error'}
-                                </div>
-                                <p className="text-sm text-slate-300 leading-relaxed italic mb-4">
-                                  {gameState.isCorrect ? currentCase.successStory : currentCase.failureStory}
-                                </p>
-                                <div className="pt-4 border-t border-white/8 space-y-1.5">
-                                  <p className="text-[9px] text-slate-600 uppercase font-black tracking-widest">
-                                    Theoretical Justification
+                              <div className="flex-1 min-w-0 space-y-4">
+                                {/* Case narrative */}
+                                <div>
+                                  <p className="text-xs text-slate-600 uppercase font-black tracking-widest mb-2">
+                                    Case Narrative
                                   </p>
-                                  <p className="text-xs text-slate-500 font-mono italic leading-relaxed">
+                                  <p className="text-base text-slate-300 leading-relaxed italic border-l-2 border-white/10 pl-3">
+                                    {gameState.isCorrect ? currentCase.successStory : currentCase.failureStory}
+                                  </p>
+                                </div>
+
+                                {/* Theoretical justification */}
+                                <div className="pt-3 border-t border-white/8">
+                                  <p className="text-xs text-slate-600 uppercase font-black tracking-widest mb-2">
+                                    Field Notes
+                                  </p>
+                                  <p className="text-sm text-slate-500 font-mono leading-relaxed">
                                     {currentCase.problem.explanation}
                                   </p>
                                 </div>
+
+                                {/* Correct answer (on failure, code-fill) */}
                                 {currentCase.problem.type === 'code-fill' && !gameState.isCorrect && (
-                                  <div className="pt-3 border-t border-white/8 space-y-1 mt-3">
-                                    <p className="text-[9px] text-slate-600 uppercase font-black tracking-widest">Correct Answer</p>
+                                  <div className="pt-3 border-t border-white/8">
+                                    <p className="text-[9px] text-slate-600 uppercase font-black tracking-widest mb-1">Correct Answer</p>
                                     <p className="text-sm text-green-400 font-mono font-black">{currentCase.problem.correctAnswer}</p>
                                   </div>
                                 )}
+
+                                {/* Investigation log — procedural narrative */}
+                                <div className={cn(
+                                  'pt-3 border-t rounded-xl p-3 mt-1',
+                                  gameState.isCorrect ? 'border-green-500/20 bg-green-500/5' : 'border-red-500/20 bg-red-500/5',
+                                )}>
+                                  <p className="text-xs text-slate-600 uppercase font-black tracking-widest mb-1.5">
+                                    Investigation Log
+                                  </p>
+                                  <p className={cn('text-sm leading-relaxed font-medium', gameState.isCorrect ? 'text-green-300/80' : 'text-red-300/80')}>
+                                    {getInvestigationNarrative(
+                                      gameState.currentCaseIndex,
+                                      activeCases.length,
+                                      gameState.isCorrect,
+                                      gameState.score,
+                                    )}
+                                  </p>
+                                </div>
                               </div>
 
                               {/* Action buttons */}
@@ -1431,7 +1672,8 @@ export default function App() {
                                   href={currentCase.problem.youtubeUrl}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="flex items-center justify-center gap-2 h-11 rounded-xl bg-red-600/15 hover:bg-red-600/30 border border-red-500/25 hover:border-red-500/50 text-red-300 font-bold transition-all text-xs uppercase tracking-widest group"
+                                  onClick={() => playPop()}
+                                  className="flex items-center justify-center gap-2 h-11 rounded-xl bg-red-600/15 hover:bg-red-600/30 border border-red-500/25 hover:border-red-500/50 text-red-300 font-bold transition-all text-sm uppercase tracking-widest group"
                                 >
                                   <Youtube className="w-4 h-4" />
                                   Tutorial
@@ -1441,9 +1683,9 @@ export default function App() {
                                   whileHover={{ scale: 1.03 }}
                                   whileTap={{ scale: 0.97 }}
                                   onClick={nextStep}
-                                  className="flex-1 bg-white/8 hover:bg-white/15 border border-white/15 hover:border-white/25 text-white rounded-xl font-black flex items-center justify-center gap-2 transition-all group uppercase tracking-widest text-xs"
+                                  className="flex-1 bg-white/8 hover:bg-white/15 border border-white/15 hover:border-white/25 text-white rounded-xl font-black flex items-center justify-center gap-2 transition-all group uppercase tracking-widest text-sm"
                                 >
-                                  Next Stage
+                                  {gameState.currentCaseIndex < activeCases.length - 1 ? 'Next Stage' : 'Conclude'}
                                   <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                                 </motion.button>
                               </div>
@@ -1488,7 +1730,6 @@ export default function App() {
                 animate={{ opacity: 1, scale: 1 }}
                 className="flex-1 flex flex-col items-center justify-center text-center space-y-10"
               >
-                {/* Header */}
                 <div className="space-y-4">
                   <div className={cn(
                     'inline-flex items-center gap-2 px-4 py-1.5 rounded-full border text-[10px] font-black tracking-[0.3em] uppercase',
@@ -1510,14 +1751,12 @@ export default function App() {
                   )}
                 </div>
 
-                {/* Score + Rank */}
                 <motion.div
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.15 }}
                   className="grid grid-cols-1 md:grid-cols-12 gap-5 w-full max-w-4xl"
                 >
-                  {/* Score ring */}
                   <div className="md:col-span-4">
                     <div className="p-px rounded-3xl bg-gradient-to-br from-white/15 via-white/5 to-transparent">
                       <div className="rounded-[23px] bg-slate-950/95 p-7 flex flex-col items-center gap-4">
@@ -1537,7 +1776,6 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Rank card */}
                   <div className="md:col-span-8">
                     <div className={cn('p-px rounded-3xl', S.badgeBorder.replace('border-', 'bg-').replace('/50', '/30'))}>
                       <div className={cn('rounded-[23px] p-7 flex flex-col justify-center text-left h-full', S.cardBg)}>
@@ -1546,7 +1784,7 @@ export default function App() {
                           Final Performance Audit
                         </div>
                         <div className="text-3xl font-black text-white mb-3 italic uppercase tracking-tight">{rank}</div>
-                        <p className="text-slate-400 leading-relaxed italic text-sm max-w-sm">{rankMsg}</p>
+                        <p className="text-slate-400 leading-relaxed italic text-base max-w-sm">{rankMsg}</p>
                       </div>
                     </div>
                   </div>
@@ -1564,12 +1802,12 @@ export default function App() {
                       Case Breakdown
                     </p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                      {gameState.caseResults.map((r, i) => (
+                      {gameState.caseResults.map((r: CaseResult, i: number) => (
                         <motion.div
                           key={i}
                           initial={{ opacity: 0, x: -12 }}
                           animate={{ opacity: 1, x: 0 }}
-                          transition={{ delay: 0.4 + i * 0.08 }}
+                          transition={{ delay: 0.4 + i * 0.06 }}
                           className={cn(
                             'flex items-center gap-4 p-4 rounded-2xl border',
                             r.correct
@@ -1611,7 +1849,7 @@ export default function App() {
                             <span className="text-amber-300 font-bold">
                               {gameState.difficulty === 'easy' ? 'Medium' : 'Hard'}
                             </span>{' '}
-                            difficulty — same subject, tougher questions.
+                            difficulty — same subject and case count, tougher questions.
                           </p>
                         </div>
                         <motion.button
@@ -1665,7 +1903,7 @@ export default function App() {
             ))}
           </div>
           <p className="text-[9px] text-slate-700 font-mono tracking-widest">
-            V.6.0.0-STABLE // SCIENCE_INTEL_SYSTEMS_GLOBAL
+            V.7.0.0-STABLE // SCIENCE_INTEL_SYSTEMS_GLOBAL
           </p>
         </footer>
       </div>

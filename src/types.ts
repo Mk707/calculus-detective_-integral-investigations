@@ -49,15 +49,18 @@ export interface CaseResult {
   correct: boolean;
 }
 
+export type QuestionLimit = 5 | 10 | null;
+
 export interface GameState {
   subject: Subject | null;
+  difficulty: Difficulty | null;
+  questionLimit: QuestionLimit;
   userTopic: string | null;
   activeCases: ActiveCase[];
   currentCaseIndex: number;
   score: number;
   isGameOver: boolean;
-  view: 'start' | 'subject-select' | 'difficulty-select' | 'topic-input' | 'loading' | 'investigation' | 'conclusion';
-  difficulty: Difficulty | null;
+  view: 'start' | 'subject-select' | 'difficulty-select' | 'question-count' | 'topic-input' | 'loading' | 'investigation' | 'conclusion';
   selectedOption: string | null;
   isCorrect: boolean | null;
   codeInput: string;

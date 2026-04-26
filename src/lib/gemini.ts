@@ -23,6 +23,7 @@ export async function generateTopicCases(
   subject: Subject,
   topic: string,
   difficulty: Difficulty = 'medium',
+  count: number = 4,
 ): Promise<ActiveCase[]> {
   if (!API_KEY) throw new Error('GEMINI_API_KEY is not set');
 
@@ -35,7 +36,7 @@ export async function generateTopicCases(
 The player has chosen to study: "${topic}"
 Difficulty level: ${DIFFICULTY_CONTEXT[difficulty]}
 
-Generate exactly 4 detective investigation cases about "${topic}" at the specified difficulty level.
+Generate exactly ${count} detective investigation cases about "${topic}" at the specified difficulty level.
 Return ONLY a valid JSON object — no markdown fences, no extra text:
 
 {
@@ -106,7 +107,7 @@ Requirements:
       c.options.length >= 2 &&
       c.options.includes(c.correctAnswer),
     )
-    .slice(0, 4)
+    .slice(0, count)
     .map((c, i) => ({
       id: String(i + 1),
       title: c.title,
