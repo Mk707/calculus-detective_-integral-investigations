@@ -17,15 +17,12 @@ import {
   ExternalLink,
   Youtube,
 } from 'lucide-react';
+import DetectiveMascot from './components/DetectiveMascot';
 import { SUBJECT_BANKS, buildActiveCases, getSubjectMeta } from './data/questionBanks';
 import { GameState, Subject } from './types';
 import { cn } from './lib/utils';
 import 'katex/dist/katex.min.css';
 import { BlockMath } from 'react-katex';
-import { InlineMath, BlockMath } from 'react-katex';
-import DetectiveMascot from './components/DetectiveMascot';
-
-
 
 // ─────────────────────────────────────────────────────────
 // Detective ambient background / cursor
@@ -207,6 +204,7 @@ function getStyles(subject: Subject | null) {
 const INITIAL_STATE: GameState = {
   subject: null,
   activeCases: [],
+  shuffledCases: [],
   currentCaseIndex: 0,
   score: 0,
   isGameOver: false,
@@ -222,31 +220,12 @@ export default function App() {
   const currentCase = activeCases[gameState.currentCaseIndex] ?? null;
   const subjectMeta = gameState.subject ? getSubjectMeta(gameState.subject) : null;
   const S = getStyles(gameState.subject);
-  const [gameState, setGameState] = useState<GameState>({
-    currentCaseIndex: 0,
-    score: 0,
-    isGameOver: false,
-    view: 'start',
-    selectedOption: null,
-    isCorrect: null,
-    shuffledCases: [],
-  });
-  const mascotState = gameState.isCorrect === null
-  ? 'thinking'
-  : gameState.isCorrect
-  ? 'correct'
-  : 'wrong';
-
-  const currentCase = gameState.shuffledCases[gameState.currentCaseIndex];
-
-  const shuffleArray = <T,>(array: T[]): T[] => {
-    const shuffled = [...array];
-    for (let i = shuffled.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-    }
-    return shuffled;
-  };
+  const mascotState =
+    gameState.isCorrect === null
+      ? 'thinking'
+      : gameState.isCorrect
+      ? 'correct'
+      : 'wrong';
 
   const goToSubjectSelect = () => {
     setGameState({ ...INITIAL_STATE, view: 'subject-select' });
@@ -258,13 +237,13 @@ export default function App() {
       subject,
       activeCases: cases,
       currentCaseIndex: 0,
-      score: 0,
-      isGameOver: false,
-      view: 'investigation',
-      selectedOption: null,
-      isCorrect: null,
-      shuffledCases: shuffleArray(INITIAL_CASES),
+    // Removed mascotState definition from here as it is now defined in the App component scope
     });
+    const mascotState = gameState.isCorrect === null
+    ? 'thinking'
+    : gameState.isCorrect
+    ? 'correct'
+    : 'wrong';
   };
 
   const handleOptionSelect = (option: string) => {
@@ -280,7 +259,6 @@ export default function App() {
 
   const nextStep = () => {
     if (gameState.currentCaseIndex < activeCases.length - 1) {
-    if (gameState.currentCaseIndex < gameState.shuffledCases.length - 1) {
       setGameState(prev => ({
         ...prev,
         currentCaseIndex: prev.currentCaseIndex + 1,
@@ -293,17 +271,6 @@ export default function App() {
   };
 
   const resetGame = () => setGameState(INITIAL_STATE);
-  const resetGame = () => {
-    setGameState({
-      currentCaseIndex: 0,
-      score: 0,
-      isGameOver: false,
-      view: 'start',
-      selectedOption: null,
-      isCorrect: null,
-      shuffledCases: [],
-    });
-  };
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans relative overflow-x-hidden selection:bg-cyan-500/30 cursor-none">
@@ -404,7 +371,6 @@ export default function App() {
                 </p>
               </div>
 
-              <DetectiveMascot state="idle" />
               <motion.button
                 whileHover={{ scale: 1.02, backgroundColor: '#0ea5e9' }}
                 whileTap={{ scale: 0.98 }}
@@ -519,11 +485,10 @@ export default function App() {
                   className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-3xl p-6 flex flex-col h-full"
                 >
                   <div className="mb-6">
-                    <motion.span
                   <div className="flex justify-center mb-4">
-                    <DetectiveMascot state={mascotState} />
-                    </div>
-                    <motion.span 
+                  <DetectiveMascot state={mascotState} />
+                  </div>
+                    <motion.span
                       initial={{ x: -10, opacity: 0 }}
                       animate={{ x: 0, opacity: 1 }}
                       transition={{ delay: 0.3 }}
