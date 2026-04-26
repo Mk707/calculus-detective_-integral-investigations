@@ -1,4 +1,4 @@
-import { SubjectBank, ActiveCase, Subject } from '../types';
+import { SubjectBank, ActiveCase, Subject, Difficulty } from '../types';
 
 export const SUBJECT_BANKS: SubjectBank[] = [
   // ─────────────────────────────────────────────────────────
@@ -767,20 +767,30 @@ export const SUBJECT_BANKS: SubjectBank[] = [
   },
 ];
 
-export function buildActiveCases(subject: Subject): ActiveCase[] {
+export function buildActiveCases(subject: Subject, difficulty: Difficulty = 'medium'): ActiveCase[] {
   const bank = SUBJECT_BANKS.find(b => b.subject === subject);
   if (!bank) return [];
 
   return bank.levels.map(level => {
-    const randomQuestion =
-      level.questions[Math.floor(Math.random() * level.questions.length)];
+    let idx: number;
+    if (difficulty === 'easy') {
+      // Always pick the first (simplest) question variant in each level
+      idx = 0;
+    } else if (difficulty === 'hard') {
+      // Always pick the last (hardest) question variant in each level
+      idx = level.questions.length - 1;
+    } else {
+      // Medium: random pick (original behaviour)
+      idx = Math.floor(Math.random() * level.questions.length);
+    }
+    const question = level.questions[idx];
     return {
       id: level.id,
       title: level.title,
       description: level.description,
       location: level.location,
       evidenceType: level.evidenceType,
-      problem: randomQuestion,
+      problem: question,
       successStory: level.successStory,
       failureStory: level.failureStory,
     };

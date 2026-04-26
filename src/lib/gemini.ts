@@ -1,5 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
-import type { ActiveCase, Subject } from '../types';
+import type { ActiveCase, Difficulty, Subject } from '../types';
 
 const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 
@@ -13,9 +13,16 @@ const SUBJECT_CONTEXT: Record<Subject, string> = {
   'computer-science': 'computer science (binary numbers, logic gates, algorithms, programming)',
 };
 
+const DIFFICULTY_CONTEXT: Record<Difficulty, string> = {
+  easy: 'beginner-level — all 4 cases should cover fundamental concepts only, use simple language, and avoid advanced calculations',
+  medium: 'mixed — progress from beginner (case 1) to intermediate/advanced (case 4)',
+  hard: 'advanced — all 4 cases should challenge with applied problems, edge cases, and complex reasoning',
+};
+
 export async function generateTopicCases(
   subject: Subject,
   topic: string,
+  difficulty: Difficulty = 'medium',
 ): Promise<ActiveCase[]> {
   if (!API_KEY) throw new Error('GEMINI_API_KEY is not set');
 
@@ -26,8 +33,9 @@ export async function generateTopicCases(
   const prompt = `You are an educational game designer creating a detective-themed learning game about ${SUBJECT_CONTEXT[subject]}.
 
 The player has chosen to study: "${topic}"
+Difficulty level: ${DIFFICULTY_CONTEXT[difficulty]}
 
-Generate exactly 4 detective investigation cases about "${topic}", progressing from beginner (case 1) to advanced (case 4).
+Generate exactly 4 detective investigation cases about "${topic}" at the specified difficulty level.
 Return ONLY a valid JSON object — no markdown fences, no extra text:
 
 {

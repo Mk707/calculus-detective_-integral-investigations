@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { buildActiveCases, getSubjectMeta } from './data/questionBanks';
 import { generateTopicCases, isGeminiAvailable } from './lib/gemini';
-import { ActiveCase, CaseResult, GameState, Subject } from './types';
+import { ActiveCase, CaseResult, Difficulty, GameState, Subject } from './types';
 import { cn } from './lib/utils';
 // @ts-ignore
 import 'katex/dist/katex.min.css';
@@ -224,6 +224,7 @@ function getStyles(subject: Subject | null) {
 // ─────────────────────────────────────────────────────────
 const INITIAL_STATE: GameState = {
   subject: null,
+  difficulty: null,
   userTopic: null,
   activeCases: [],
   currentCaseIndex: 0,
@@ -248,19 +249,27 @@ export default function App() {
 
   const goToSubjectSelect = () => {
     setTopicInput('');
+    setGeminiStatus(null);
     setGameState({ ...INITIAL_STATE, view: 'subject-select' });
   };
 
-  // Step 1: pick subject → go to topic input screen
+  // Step 1: pick subject → go to difficulty-select screen
   const selectSubject = (subject: Subject) => {
     setTopicInput('');
-    setGameState({ ...INITIAL_STATE, subject, view: 'topic-input' });
+    setGameState({ ...INITIAL_STATE, subject, view: 'difficulty-select' });
+  };
+
+  // Step 2: pick difficulty → go to topic-input screen
+  const selectDifficulty = (difficulty: Difficulty) => {
+    setGameState(prev => ({ ...prev, difficulty, view: 'topic-input' }));
   };
 
   // Skip topic input → use static question bank
   const handleTopicSkip = () => {
     if (!gameState.subject) return;
-    const cases = buildActiveCases(gameState.subject);
+    const diff = gameState.difficulty ?? 'medium';
+    setGeminiStatus(null);
+    const cases = buildActiveCases(gameState.subject, diff);
     setGameState(prev => ({
       ...prev,
       userTopic: null,
@@ -276,10 +285,11 @@ export default function App() {
     }));
   };
 
-  // Step 2: user typed a topic → Gemini generates all 4 cases
+  // Step 3: user typed a topic → Gemini generates all 4 cases
   const selectTopic = async (topic: string) => {
     if (!gameState.subject || !topic.trim()) return;
     const subject = gameState.subject;
+    const diff = gameState.difficulty ?? 'medium';
     const trimmed = topic.trim();
 
     setGeminiStatus(null);
@@ -289,8 +299,8 @@ export default function App() {
     console.log('[Gemini] isGeminiAvailable:', isGeminiAvailable());
     if (isGeminiAvailable()) {
       try {
-        console.log('[Gemini] Calling generateTopicCases for', subject, trimmed);
-        geminiCases = await generateTopicCases(subject, trimmed);
+        console.log('[Gemini] Calling generateTopicCases for', subject, trimmed, diff);
+        geminiCases = await generateTopicCases(subject, trimmed, diff);
         console.log('[Gemini] Success, got', geminiCases?.length, 'cases');
       } catch (err) {
         console.error('[Gemini] generateTopicCases failed:', err);
@@ -316,7 +326,7 @@ export default function App() {
       }));
     } else {
       setGeminiStatus('fallback');
-      const cases = buildActiveCases(subject);
+      const cases = buildActiveCases(subject, diff);
       setGameState(prev => ({
         ...prev,
         activeCases: cases,
@@ -330,6 +340,29 @@ export default function App() {
         caseResults: [],
       }));
     }
+  };
+
+  // Bump difficulty by one step and restart with the same subject (static cases)
+  const tryHarderDifficulty = () => {
+    if (!gameState.subject) return;
+    const nextDiff: Difficulty = gameState.difficulty === 'easy' ? 'medium' : 'hard';
+    const cases = buildActiveCases(gameState.subject, nextDiff);
+    setGeminiStatus(null);
+    setTopicInput('');
+    setGameState(prev => ({
+      ...INITIAL_STATE,
+      subject: prev.subject,
+      difficulty: nextDiff,
+      activeCases: cases,
+      currentCaseIndex: 0,
+      score: 0,
+      isGameOver: false,
+      view: 'investigation',
+      selectedOption: null,
+      isCorrect: null,
+      codeInput: '',
+      caseResults: [],
+    }));
   };
 
   const recordResult = (correct: boolean) => {
@@ -358,7 +391,9 @@ export default function App() {
     if (gameState.isCorrect !== null || !currentCase) return;
     const input = gameState.codeInput.trim();
     if (!input) return;
-    const isCorrect = input.toLowerCase() === currentCase.problem.correctAnswer.toLowerCase();
+    // Normalise whitespace so "t=1" matches "t = 1", etc.
+    const normalise = (s: string) => s.toLowerCase().replace(/\s+/g, '');
+    const isCorrect = normalise(input) === normalise(currentCase.problem.correctAnswer);
     recordResult(isCorrect);
     setGameState(prev => ({
       ...prev,
@@ -426,6 +461,9 @@ export default function App() {
                 </h1>
                 <p className={cn('text-[10px] font-mono tracking-[0.2em] uppercase', S.accent)}>
                   Central Intelligence — {subjectMeta?.title} Division
+                  {gameState.difficulty && (
+                    <span className="ml-2 opacity-60">· {gameState.difficulty.toUpperCase()}</span>
+                  )}
                 </p>
               </div>
             </div>
@@ -593,6 +631,108 @@ export default function App() {
             </motion.div>
           )}
 
+          {/* ─────── DIFFICULTY SELECT ─────── */}
+          {gameState.view === 'difficulty-select' && gameState.subject && (
+            <motion.div
+              key="difficulty-select"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="flex-1 flex flex-col items-center justify-center space-y-10"
+            >
+              {(() => {
+                const cfg = SUBJECT_CONFIG.find(c => c.subject === gameState.subject)!;
+                return (
+                  <>
+                    <div className="text-center space-y-3">
+                      <div className={cn('inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-bold tracking-[0.25em] uppercase border', cfg.badge, cfg.badgeBorder)}>
+                        {cfg.label} Division
+                      </div>
+                      <h2 className="text-4xl md:text-6xl font-black text-white italic uppercase tracking-tighter">
+                        Choose <span className={cfg.accent}>Difficulty</span>
+                      </h2>
+                      <p className="text-slate-400 max-w-md mx-auto text-sm">
+                        Pick a challenge level that matches your current knowledge. You can always try harder at the end.
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-3xl">
+                      {(
+                        [
+                          {
+                            level: 'easy' as const,
+                            label: 'Easy',
+                            tagline: 'Fundamental concepts · Beginner-friendly · Multiple choice',
+                            icon: '🔍',
+                            border: 'border-green-500/30 hover:border-green-500/70',
+                            glow: 'shadow-[0_0_30px_rgba(34,197,94,0.08)] hover:shadow-[0_0_40px_rgba(34,197,94,0.2)]',
+                            accent: 'text-green-400',
+                            badge: 'bg-green-500/15 text-green-300',
+                            badgeBorder: 'border-green-500/30',
+                          },
+                          {
+                            level: 'medium' as const,
+                            label: 'Medium',
+                            tagline: 'Mixed concepts · Randomised questions · Standard challenge',
+                            icon: '🎯',
+                            border: 'border-amber-500/30 hover:border-amber-500/70',
+                            glow: 'shadow-[0_0_30px_rgba(245,158,11,0.08)] hover:shadow-[0_0_40px_rgba(245,158,11,0.2)]',
+                            accent: 'text-amber-400',
+                            badge: 'bg-amber-500/15 text-amber-300',
+                            badgeBorder: 'border-amber-500/30',
+                          },
+                          {
+                            level: 'hard' as const,
+                            label: 'Hard',
+                            tagline: 'Advanced applications · Complex reasoning · Coding included',
+                            icon: '⚡',
+                            border: 'border-red-500/30 hover:border-red-500/70',
+                            glow: 'shadow-[0_0_30px_rgba(239,68,68,0.08)] hover:shadow-[0_0_40px_rgba(239,68,68,0.2)]',
+                            accent: 'text-red-400',
+                            badge: 'bg-red-500/15 text-red-300',
+                            badgeBorder: 'border-red-500/30',
+                          },
+                        ] as const
+                      ).map((d, i) => (
+                        <motion.button
+                          key={d.level}
+                          initial={{ opacity: 0, y: 30 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: i * 0.1 }}
+                          whileHover={{ scale: 1.03, y: -4 }}
+                          whileTap={{ scale: 0.97 }}
+                          onClick={() => selectDifficulty(d.level)}
+                          className={cn(
+                            'group relative backdrop-blur-xl bg-white/5 border rounded-3xl p-8 flex flex-col items-start gap-4 text-left transition-all duration-300',
+                            d.border,
+                            d.glow,
+                          )}
+                        >
+                          <div className="text-3xl">{d.icon}</div>
+                          <div className="space-y-1">
+                            <h3 className={cn('text-2xl font-bold uppercase tracking-tight', d.accent)}>{d.label}</h3>
+                            <p className="text-slate-400 text-xs leading-relaxed">{d.tagline}</p>
+                          </div>
+                          <div className={cn('mt-auto flex items-center gap-2 text-xs font-bold uppercase tracking-widest', d.accent)}>
+                            Select
+                            <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+                          </div>
+                        </motion.button>
+                      ))}
+                    </div>
+
+                    <button
+                      onClick={goToSubjectSelect}
+                      className="text-slate-500 hover:text-slate-300 text-xs uppercase tracking-widest font-bold flex items-center gap-2 transition-colors"
+                    >
+                      <RotateCcw className="w-3 h-3" /> Back to Subject Select
+                    </button>
+                  </>
+                );
+              })()}
+            </motion.div>
+          )}
+
           {/* ─────── TOPIC INPUT ─────── */}
           {gameState.view === 'topic-input' && gameState.subject && (
             <motion.div
@@ -688,10 +828,10 @@ export default function App() {
               </div>
 
               <button
-                onClick={goToSubjectSelect}
+                onClick={() => setGameState(prev => ({ ...prev, view: 'difficulty-select' }))}
                 className="text-slate-600 hover:text-slate-400 text-xs uppercase tracking-widest font-bold flex items-center gap-2 transition-colors"
               >
-                <RotateCcw className="w-3 h-3" /> Back to Subject Select
+                <RotateCcw className="w-3 h-3" /> Back to Difficulty Select
               </button>
             </motion.div>
           )}
@@ -1256,6 +1396,38 @@ export default function App() {
                         </motion.div>
                       ))}
                     </div>
+                  </motion.div>
+                )}
+
+                {/* Try Harder prompt */}
+                {gameState.difficulty !== 'hard' && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.6 }}
+                    className="w-full max-w-4xl px-6 py-5 rounded-2xl border border-amber-500/20 bg-amber-500/5 flex flex-col sm:flex-row items-center justify-between gap-4"
+                  >
+                    <div className="text-left">
+                      <p className="text-amber-300 font-bold text-sm uppercase tracking-widest mb-1">
+                        Ready for more?
+                      </p>
+                      <p className="text-slate-400 text-xs">
+                        Try{' '}
+                        <span className="text-amber-300 font-bold">
+                          {gameState.difficulty === 'easy' ? 'Medium' : 'Hard'}
+                        </span>{' '}
+                        difficulty — same subject, tougher questions.
+                      </p>
+                    </div>
+                    <motion.button
+                      whileHover={{ scale: 1.04 }}
+                      whileTap={{ scale: 0.97 }}
+                      onClick={tryHarderDifficulty}
+                      className="shrink-0 flex items-center gap-2 px-6 py-3 rounded-xl bg-amber-500/20 hover:bg-amber-500/35 border border-amber-500/40 text-amber-300 font-bold text-xs uppercase tracking-widest transition-all"
+                    >
+                      Try {gameState.difficulty === 'easy' ? 'Medium' : 'Hard'}
+                      <ChevronRight className="w-4 h-4" />
+                    </motion.button>
                   </motion.div>
                 )}
 

@@ -1,4 +1,5 @@
 export type Subject = 'calculus' | 'biology' | 'computer-science';
+export type Difficulty = 'easy' | 'medium' | 'hard';
 
 export interface QuestionVariant {
   type?: 'multiple-choice' | 'code-fill';
@@ -55,7 +56,8 @@ export interface GameState {
   currentCaseIndex: number;
   score: number;
   isGameOver: boolean;
-  view: 'start' | 'subject-select' | 'topic-input' | 'loading' | 'investigation' | 'conclusion';
+  view: 'start' | 'subject-select' | 'difficulty-select' | 'topic-input' | 'loading' | 'investigation' | 'conclusion';
+  difficulty: Difficulty | null;
   selectedOption: string | null;
   isCorrect: boolean | null;
   codeInput: string;
